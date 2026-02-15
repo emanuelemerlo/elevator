@@ -9,6 +9,7 @@
 
 #include <deque>
 #include <atomic>
+#include <thread>
 
 #include "ILog.h"
 #include "WorkerThread.h"
@@ -38,18 +39,21 @@ protected:
       const std::string& message,
       const std::string& traceId,
       const TraceLevel level,
+      const std::thread::id& threadId,
       const TimeStamp& timeStamp = Clock::now())
     {
       m_string = message;
       m_traceId = traceId;
       m_level = level;
       m_timeStamp = timeStamp;
+      m_threadId = threadId;
     }
 
     std::string m_string;
     std::string m_traceId;
     TraceLevel m_level = TraceLevel::Info;
     TimeStamp m_timeStamp;
+    std::thread::id m_threadId;
   };
 
 public:

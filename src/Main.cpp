@@ -6,25 +6,26 @@
 #include <iostream>
 #include <string> 
 
-using namespace Configuration::CallsGenerator;
-
 int main()
 {
+  Configuration::LoadFromJsonFile();
+  const auto& configuration = Configuration::Get();
+
   Log log;
   log.Trace("Press Enter to stop...");
 
   try
   {
-    Management elevatorsManagement(Configuration::Building::NumberOfElevators);
+    Management elevatorsManagement(configuration.building.numberOfElevators);
 
     PeopleCallsGenerator callsGenerator(elevatorsManagement);
 
-    switch (GeneratorType)
+    switch (configuration.callsGenerator.generatorType)
     {
-    case Type::Random:
-      callsGenerator.StartRandom(NumberOfCalls);
+    case Configuration::CallsGenerator::Type::Random:
+      callsGenerator.StartRandom(configuration.callsGenerator.numberOfCalls);
       break;
-    case Type::Fixed: 
+    case Configuration::CallsGenerator::Type::Fixed:
     default:
       callsGenerator.StartFixed();
     }

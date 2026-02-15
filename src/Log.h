@@ -19,7 +19,7 @@
 class Log final : public ILog
 {
 public:
-  explicit Log(const std::string& traceId = "", const LogType logType = Configuration::Log::DefaultLogType);
+  explicit Log(const std::string& traceId = "", const LogType logType = ILog::LogType::Default);
   virtual ~Log() = default;
 
   Log(const Log&) = default;

@@ -14,7 +14,6 @@
 #include <functional>
 
 using namespace std::chrono_literals;
-using namespace Configuration::CallsGenerator;
 
 
 PeopleCallsGenerator::PeopleCallsGenerator(Management& management) : m_management(management)
@@ -70,8 +69,9 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
   const auto seed = static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch().count());
   std::default_random_engine generator(seed);
 
-  const std::uniform_int_distribution<Floors::FloorNumber> randomFloor(Floors::BottomFloor, Floors::TopFloor);
-  const std::uniform_int_distribution<long long> randomDelay(MinDelayBetweenCalls, MaxDelayBetweenCalls);
+  const auto& settings = Configuration::Get().callsGenerator;
+  const std::uniform_int_distribution<Floors::FloorNumber> randomFloor(Floors::BottomFloor, Floors::TopFloor());
+  const std::uniform_int_distribution<long long> randomDelay(settings.minDelayBetweenCallsMs, settings.maxDelayBetweenCallsMs);
 
   do
   {
@@ -90,13 +90,17 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
     const auto it = Floors::GetPeople().Insert(call);
 
     // Async assign request
-    auto handle = std::async(std::launch::async, [peopleCallsGenerator, &it]() {peopleCallsGenerator->m_management.AssignCall(*it); });
+    auto callToAssign = *it;
+    auto handle = std::async(std::launch::async, [peopleCallsGenerator, callToAssign]() mutable
+    {
+      peopleCallsGenerator->m_management.AssignCall(callToAssign);
+    });
 
     // Synch assign request
-    //m_management.AssignCall(*it);
+    //m_management.AssignCall(callToAssign);
 
     ++numberOfGeneratedCalls;
-    if (m_numberOfCalls != EndlessCalls && numberOfGeneratedCalls >= m_numberOfCalls)
+    if (m_numberOfCalls != Configuration::CallsGenerator::EndlessCalls && numberOfGeneratedCalls >= m_numberOfCalls)
       break;
 
     auto getDelay = std::bind(randomDelay, std::ref(generator));
@@ -115,11 +119,12 @@ void PeopleCallsGenerator::FixedGeneratorThread::CycleFunction(PeopleCallsGenera
   const auto seed = static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch().count());
   std::default_random_engine generator(seed);
 
-  const std::uniform_int_distribution<long long> randomDelay(MinDelayBetweenCalls, MaxDelayBetweenCalls);
+  const auto& settings = Configuration::Get().callsGenerator;
+  const std::uniform_int_distribution<long long> randomDelay(settings.minDelayBetweenCallsMs, settings.maxDelayBetweenCallsMs);
 
   std::this_thread::sleep_for(2s); // arbitrary delay before start
 
-  static constexpr auto topFloor = Floors::TopFloor; // workaround to avoid an obscure linking problem with g++
+  const auto topFloor = Floors::TopFloor();
   static constexpr auto bottomFloor = Floors::BottomFloor;
 
   std::list<std::shared_ptr<Call>> calls = {
@@ -158,10 +163,14 @@ void PeopleCallsGenerator::FixedGeneratorThread::CycleFunction(PeopleCallsGenera
     const auto it = Floors::GetPeople().Insert(call);
 
     // Async assign request
-    auto handle = std::async(std::launch::async, [peopleCallsGenerator, &it]() {peopleCallsGenerator->m_management.AssignCall(*it); });
+    auto callToAssign = *it;
+    auto handle = std::async(std::launch::async, [peopleCallsGenerator, callToAssign]() mutable
+    {
+      peopleCallsGenerator->m_management.AssignCall(callToAssign);
+    });
 
     // Synch assign request
-    //m_management.AssignCall(*it);
+    //m_management.AssignCall(callToAssign);
 
     auto getDelay = std::bind(randomDelay, std::ref(generator));
     std::this_thread::sleep_for(std::chrono::milliseconds(getDelay()));

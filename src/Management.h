@@ -11,6 +11,7 @@
 
 #include <vector>
 #include <memory>
+#include <mutex>
 
 class Management final 
 {
@@ -32,6 +33,7 @@ public:
 
 private:
   std::vector<std::unique_ptr<class Elevator>> m_elevators;
+  std::mutex m_mutex;
 
   Log m_log;
 };

@@ -3,8 +3,6 @@
 #include "Watchdog.h"
 #include "Configuration.h"
 
-using namespace Configuration::Elevator;
-
 Elevator::Elevator(const std::string& id)
 {
   SetId(id);
@@ -139,7 +137,7 @@ void Elevator::PeopleEnterAndExit()
 
   RestoreDestinationStops();
 
-  std::this_thread::sleep_for(EnterAndExitTime);
+  std::this_thread::sleep_for(Configuration::Get().elevator.enterAndExitTime);
 
   m_status = previousStatus;
 }
@@ -182,16 +180,16 @@ void Elevator::Move(const Floors::FloorNumber requestedFloor)
     {
       m_status = ElevatorStatus::Moving;
 
-      if (requestedFloor > m_currentFloor && m_currentFloor < Floors::TopFloor)
+      if (requestedFloor > m_currentFloor && m_currentFloor < Floors::TopFloor())
       {
         m_log.Trace("Moving Up [" + std::to_string(m_currentFloor) + "]", Log::TraceLevel::Verbose);
-        std::this_thread::sleep_for(TimeToReachTheNextFloor);
+        std::this_thread::sleep_for(Configuration::Get().elevator.timeToReachNextFloor);
         ++m_currentFloor;
       }
       else if (requestedFloor < m_currentFloor && m_currentFloor > 0)
       {
         m_log.Trace("Moving Down [" + std::to_string(m_currentFloor) + "]", Log::TraceLevel::Verbose);
-        std::this_thread::sleep_for(TimeToReachTheNextFloor);
+        std::this_thread::sleep_for(Configuration::Get().elevator.timeToReachNextFloor);
         --m_currentFloor;
       }
 

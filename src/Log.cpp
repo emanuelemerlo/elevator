@@ -3,7 +3,7 @@
 
 Log::Log(const std::string& traceId, const LogType logType)
 {
-  m_logType = logType;
+  m_logType = (logType == LogType::Default) ? Configuration::Get().log.defaultLogType : logType;
   GetLog(traceId);
 }
 
@@ -15,7 +15,7 @@ std::shared_ptr<ILog>& Log::GetLog(const std::string& traceId)
     {
     case LogType::Screen:
       m_implementation = std::make_shared<LogToScreen>(traceId);
-      m_implementation->SetTraceLevelFilter(Configuration::Log::TraceLevel);
+      m_implementation->SetTraceLevelFilter(Configuration::Get().log.traceLevel);
       break;
       
     case LogType::File: 

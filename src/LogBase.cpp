@@ -9,7 +9,7 @@
 std::deque<std::shared_ptr<LogBase::TraceMessage>> LogBase::m_messageQueue;
 std::unique_ptr<std::mutex> LogBase::m_messageQueueMutex{ std::make_unique<std::mutex>() };
 
-LogBase::TraceLevel LogBase::m_traceLevelFilter{ Configuration::Log::TraceLevel };
+LogBase::TraceLevel LogBase::m_traceLevelFilter{ ILog::TraceLevel::Verbose };
 
 std::atomic_uint LogBase::m_refCount;
 
@@ -29,12 +29,12 @@ LogBase::~LogBase()
 
 void LogBase::Trace(const std::stringstream& message, const TraceLevel level, const std::string& messageSpecificId) 
 {
-  Enqueue(std::make_shared<TraceMessage>(message.str(), messageSpecificId.empty() ? m_traceId : messageSpecificId, level));
+  Enqueue(std::make_shared<TraceMessage>(message.str(), messageSpecificId.empty() ? m_traceId : messageSpecificId, level, std::this_thread::get_id()));
 }
 
 void LogBase::Trace(const std::string& message, const TraceLevel level, const std::string& messageSpecificId) 
 {
-  Enqueue(std::make_shared<TraceMessage>(message, messageSpecificId.empty() ? m_traceId : messageSpecificId, level));
+  Enqueue(std::make_shared<TraceMessage>(message, messageSpecificId.empty() ? m_traceId : messageSpecificId, level, std::this_thread::get_id()));
 }
 
 
@@ -57,14 +57,21 @@ std::unique_ptr<LogBase::TraceThread>& LogBase::GetThreadInstance()
 
 void LogBase::TraceThread::CycleFunction(LogBase* logBase)
 {
-  while (!m_messageQueue.empty() && !StopRequested())
+  while (!StopRequested())
   {
-    std::lock_guard<std::mutex> lockMessageQueue(*m_messageQueueMutex);
+    std::shared_ptr<TraceMessage> message;
 
-    const auto message = std::move(m_messageQueue.front());
-    m_messageQueue.pop_front();
+    {
+      std::lock_guard<std::mutex> lockMessageQueue(*m_messageQueueMutex);
 
-    if(logBase != nullptr)
+      if (m_messageQueue.empty())
+        break;
+
+      message = std::move(m_messageQueue.front());
+      m_messageQueue.pop_front();
+    }
+
+    if (logBase != nullptr)
       logBase->LogFunction(message);
   }
 }

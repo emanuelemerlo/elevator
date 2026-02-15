@@ -1,0 +1,20 @@
+{
+  "building": {
+    "numberOfElevators": 1,
+    "numberOfFloors": 5
+  },
+  "callsGenerator": {
+    "generatorType": "Random",
+    "numberOfCalls": 5,
+    "minDelayBetweenCallsMs": 3000,
+    "maxDelayBetweenCallsMs": 10000
+  },
+  "elevator": {
+    "timeToReachNextFloorMs": 2000,
+    "enterAndExitTimeMs": 2000
+  },
+  "log": {
+    "traceLevel": "Verbose",
+    "defaultLogType": "Screen"
+  }
+}

@@ -10,7 +10,7 @@
 
 Floors::Floors()
 {
-  for (FloorNumber floorNumber = 0; floorNumber < TotalFloors; ++floorNumber)
+  for (FloorNumber floorNumber = 0; floorNumber < TotalFloors(); ++floorNumber)
     m_stops.emplace_back(false, Direction::None);
 
   m_log.SetTraceId("Building");
@@ -53,18 +53,18 @@ Floors::FloorNumber Floors::GetNextStop(const FloorNumber currentFloor, Directio
     return InvalidFloor;
 
   if (currentDirection == Direction::None)
-    currentDirection = currentFloor < TotalFloors / 2U ? Direction::Down : Direction::Up;
+    currentDirection = currentFloor < TotalFloors() / 2U ? Direction::Down : Direction::Up;
 
   FloorNumber searchStartFloor = InvalidFloor;
 
   // If the elevator reached the top or the bottom floor we must invert the direction
   if (currentDirection == Direction::Up)
   {
-    searchStartFloor = currentFloor != TopFloor ? currentFloor : BottomFloor;
+    searchStartFloor = currentFloor != TopFloor() ? currentFloor : BottomFloor;
   }
   else
   {
-    searchStartFloor = currentFloor != BottomFloor ? currentFloor : TopFloor;
+    searchStartFloor = currentFloor != BottomFloor ? currentFloor : TopFloor();
   }
 
   FloorNumber nextStop = Search(searchStartFloor, currentDirection);
@@ -77,7 +77,7 @@ Floors::FloorNumber Floors::GetNextStop(const FloorNumber currentFloor, Directio
     {
       // No stops found in current direction, search stops in the other direction
       currentDirection = (currentDirection == Direction::Up ? Direction::Down : Direction::Up);
-      searchStartFloor = (currentDirection == Direction::Up ? BottomFloor : TopFloor);
+      searchStartFloor = (currentDirection == Direction::Up ? BottomFloor : TopFloor());
 
       nextStop = Search(searchStartFloor, currentDirection);
     }

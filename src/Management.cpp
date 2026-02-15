@@ -25,6 +25,8 @@ Management::~Management()
 
 void Management::Shutdown()
 {
+  std::lock_guard<std::mutex> lock(m_mutex);
+
   if (m_elevators.empty())
     return;
 
@@ -40,7 +42,18 @@ void Management::Shutdown()
 
 bool Management::AssignCall(std::shared_ptr<Call>& call)
 {
-  bool callAssigned = false;
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  if (!call || m_elevators.empty())
+    return false;
+
+  const auto floorDifference = [&call](const auto& elevator)
+  {
+    return std::abs(static_cast<int>(elevator->GetCurrentFloor()) - static_cast<int>(call->GetStartFloor()));
+  };
+
+  std::sort(m_elevators.begin(), m_elevators.end(),
+    [&floorDifference](const auto& a, const auto& b) { return floorDifference(a) < floorDifference(b); });
 
   const auto assignCall = [&call, this](const auto& elevator)
   {
@@ -52,27 +65,18 @@ bool Management::AssignCall(std::shared_ptr<Call>& call)
     elevator->AnswerToCall(call);
   };
 
-  const auto floorDifference = [&call](const auto& elevator) { return std::abs(static_cast<int>(elevator->GetCurrentFloor() - call->GetStartFloor())); };
-
-  std::sort(m_elevators.begin(), m_elevators.end(),
-    [&floorDifference](const auto& a, const auto& b) { return floorDifference(a) > floorDifference(b); });
-
-  for(auto& elevator : m_elevators)
+  for (auto& elevator : m_elevators)
   {
-    if ( m_elevators.size() == 1 || elevator->Available(call))
+    if (m_elevators.size() == 1 || elevator->Available(call))
     {
       assignCall(elevator);
-      callAssigned = true;
-      break;
+      return true;
     }
   }
 
-  if (!callAssigned)
-  {
-    m_log.Trace("FORCED ASSIGNATION FOR CALL " + call->ToString(), Log::TraceLevel::Warning);
-   assignCall(*m_elevators.begin());
-  }
+  m_log.Trace("FORCED ASSIGNATION FOR CALL " + call->ToString(), Log::TraceLevel::Warning);
+  assignCall(*m_elevators.begin());
 
-  return callAssigned;
+  return false;
 }
 
