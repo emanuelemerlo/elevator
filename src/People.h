@@ -8,6 +8,7 @@
 #pragma once
 
 #include <list>
+#include <cstddef>
 
 #include "Call.h"
 
@@ -35,6 +36,7 @@ public:
   void Trace(const Floors::FloorNumber currentFloor = Floors::InvalidFloor);
 
   bool Empty();
+  std::size_t Count() const;
 
   void SetId(const std::string& id) { m_log.SetTraceId(id); }
   std::string GetId() const { return m_log.GetTraceId(); }
@@ -52,7 +54,7 @@ private:
   void Exit(const Floors::FloorNumber currentFloor);
 
 private:
-  std::mutex m_mutex;
+  mutable std::mutex m_mutex;
 
   Log m_log;
 };

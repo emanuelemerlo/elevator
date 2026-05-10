@@ -20,6 +20,7 @@
     <ClCompile Include="src\Management.cpp" />
     <ClCompile Include="src\People.cpp" />
     <ClCompile Include="src\PeopleCallsGenerator.cpp" />
+    <ClCompile Include="src\SymbolicInterface.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Call.h" />
@@ -33,6 +34,7 @@
     <ClInclude Include="src\Management.h" />
     <ClInclude Include="src\People.h" />
     <ClInclude Include="src\PeopleCallsGenerator.h" />
+    <ClInclude Include="src\SymbolicInterface.h" />
     <ClInclude Include="src\Watchdog.h" />
     <ClInclude Include="src\WorkerThread.h" />
   </ItemGroup>

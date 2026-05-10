@@ -53,6 +53,12 @@ bool People::Empty()
   return empty();
 }
 
+std::size_t People::Count() const
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return size();
+}
+
 void People::Enter(
   People& waitingPeople, 
   const Floors::FloorNumber currentFloor, 

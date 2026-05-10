@@ -2,6 +2,7 @@
 #include "PeopleCallsGenerator.h"
 #include "Configuration.h"
 #include "Log.h"
+#include "SymbolicInterface.h"
 
 #include <iostream>
 #include <string> 
@@ -18,6 +19,8 @@ int main()
     Management elevatorsManagement(Configuration::Building::NumberOfElevators);
 
     PeopleCallsGenerator callsGenerator(elevatorsManagement);
+    SymbolicInterface symbolicInterface(elevatorsManagement);
+    symbolicInterface.Start();
 
     switch (GeneratorType)
     {
@@ -32,6 +35,7 @@ int main()
     std::cin.get();
     log.Trace("Shutdown requested...");
 
+    symbolicInterface.Stop();
     callsGenerator.Shutdown();
     elevatorsManagement.Shutdown();
   }
