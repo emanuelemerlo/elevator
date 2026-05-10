@@ -8,7 +8,7 @@
 
 all:
 	@echo "Building Elevator.run"
-	g++ -g -pthread -Wall src/Elevator.cpp src/Floors.cpp src/Log.cpp src/LogBase.cpp src/LogToScreen.cpp src/Main.cpp src/Management.cpp src/People.cpp src/PeopleCallsGenerator.cpp src/SymbolicInterface.cpp -oElevator.run
+	g++ -g -pthread -Wall src/Configuration.cpp src/ConsoleView.cpp src/Elevator.cpp src/Floors.cpp src/Log.cpp src/LogBase.cpp src/LogToScreen.cpp src/Main.cpp src/Management.cpp src/People.cpp src/PeopleCallsGenerator.cpp src/SymbolicInterface.cpp -oElevator.run
 
 .PHONY: clean
 

@@ -6,17 +6,18 @@
     "configurations": [
       
       {
-        "name": "(gdb) Launch",
+        "name": "(gdb) Launch Elevator",
         "type": "cppdbg",
         "request": "launch",
-        "program": "${workspaceRoot}/Elevator.run", // change to .exe for Windows
+        "program": "${workspaceFolder}/Elevator.exe",
         "args": [],
-        "stopAtEntry": true,
-        "cwd": "${workspaceRoot}",
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
         "environment": [],
         "externalConsole": true,
         "MIMode": "gdb",
-        "miDebuggerPath": "gdb", // specify "gdb.exe" for Windows
+        "miDebuggerPath": "C:/msys64/ucrt64/bin/gdb.exe",
+        "preLaunchTask": "Build Elevator",
         "setupCommands": [
           {
             "description": "Enable pretty-printing for gdb",

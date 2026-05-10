@@ -9,7 +9,7 @@
 std::deque<std::shared_ptr<LogBase::TraceMessage>> LogBase::m_messageQueue;
 std::unique_ptr<std::mutex> LogBase::m_messageQueueMutex{ std::make_unique<std::mutex>() };
 
-LogBase::TraceLevel LogBase::m_traceLevelFilter{ Configuration::Log::TraceLevel };
+LogBase::TraceLevel LogBase::m_traceLevelFilter{ Configuration::Log::TraceLevel() };
 
 std::atomic_uint LogBase::m_refCount;
 

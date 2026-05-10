@@ -1,6 +1,7 @@
 #include "People.h"
 #include "Log.h"
 
+#include <map>
 #include <sstream>
 
 void People::EnterAndExit(
@@ -57,6 +58,30 @@ std::size_t People::Count() const
 {
   std::lock_guard<std::mutex> lock(m_mutex);
   return size();
+}
+
+std::size_t People::CountByStartFloor(const Floors::FloorNumber floor) const
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  std::size_t count = 0;
+  for (const auto& person : *this)
+    if (person->GetStartFloor() == floor)
+      ++count;
+
+  return count;
+}
+
+std::vector<std::pair<std::string, std::size_t>> People::CountByStartFloorAndElevator(const Floors::FloorNumber floor) const
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  std::map<std::string, std::size_t> counts;
+  for (const auto& person : *this)
+    if (person->GetStartFloor() == floor)
+      ++counts[person->GetAssignedElevator()];
+
+  return std::vector<std::pair<std::string, std::size_t>>(counts.begin(), counts.end());
 }
 
 void People::Enter(

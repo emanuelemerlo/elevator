@@ -11,6 +11,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\Configuration.cpp" />
+    <ClCompile Include="src\ConsoleView.cpp" />
     <ClCompile Include="src\Elevator.cpp" />
     <ClCompile Include="src\Floors.cpp" />
     <ClCompile Include="src\Log.cpp" />
@@ -24,6 +26,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Call.h" />
+    <ClInclude Include="src\ConsoleView.h" />
     <ClInclude Include="src\Configuration.h" />
     <ClInclude Include="src\Elevator.h" />
     <ClInclude Include="src\Floors.h" />
@@ -37,6 +40,9 @@
     <ClInclude Include="src\SymbolicInterface.h" />
     <ClInclude Include="src\Watchdog.h" />
     <ClInclude Include="src\WorkerThread.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="config.json" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>

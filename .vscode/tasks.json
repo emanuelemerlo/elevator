@@ -9,8 +9,8 @@
         "-g",
         "-pthread",
         "-Wall",
-        "-o",
-        "-v",
+        "src/Configuration.cpp",
+        "src/ConsoleView.cpp",
         "src/Elevator.cpp",
         "src/Floors.cpp",
         "src/Log.cpp",
@@ -20,7 +20,9 @@
         "src/Management.cpp",
         "src/People.cpp",
         "src/PeopleCallsGenerator.cpp",
-        "-oElevator.run" // change to .exe for Windows
+        "src/SymbolicInterface.cpp",
+        "-o",
+        "Elevator.exe"
       ],
       "group": {
         "kind": "build",
@@ -41,6 +43,13 @@
           "message": 5
         }
       }
+    },
+    {
+      "label": "Run Elevator",
+      "type": "shell",
+      "command": "${workspaceFolder}\\Elevator.exe",
+      "dependsOn": "Build Elevator",
+      "problemMatcher": []
     }
   ]
 }

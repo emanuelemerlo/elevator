@@ -15,7 +15,7 @@ std::shared_ptr<ILog>& Log::GetLog(const std::string& traceId)
     {
     case LogType::Screen:
       m_implementation = std::make_shared<LogToScreen>(traceId);
-      m_implementation->SetTraceLevelFilter(Configuration::Log::TraceLevel);
+      m_implementation->SetTraceLevelFilter(Configuration::Log::TraceLevel());
       break;
       
     case LogType::File: 

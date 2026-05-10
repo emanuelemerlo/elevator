@@ -7,27 +7,35 @@
 #include <iostream>
 #include <string> 
 
-using namespace Configuration::CallsGenerator;
-
 int main()
 {
+  try
+  {
+    Configuration::LoadFromFile("config.json");
+  }
+  catch(std::exception& e)
+  {
+    std::cerr << "Invalid configuration: " << e.what() << std::endl;
+    return 1;
+  }
+
   Log log;
   log.Trace("Press Enter to stop...");
 
   try
   {
-    Management elevatorsManagement(Configuration::Building::NumberOfElevators);
+    Management elevatorsManagement(Configuration::Building::NumberOfElevators());
 
     PeopleCallsGenerator callsGenerator(elevatorsManagement);
     SymbolicInterface symbolicInterface(elevatorsManagement);
     symbolicInterface.Start();
 
-    switch (GeneratorType)
+    switch (Configuration::CallsGenerator::GeneratorType())
     {
-    case Type::Random:
-      callsGenerator.StartRandom(NumberOfCalls);
+    case Configuration::CallsGenerator::Type::Random:
+      callsGenerator.StartRandom(Configuration::CallsGenerator::NumberOfCalls());
       break;
-    case Type::Fixed: 
+    case Configuration::CallsGenerator::Type::Fixed:
     default:
       callsGenerator.StartFixed();
     }

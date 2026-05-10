@@ -13,8 +13,17 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Configuration Files">
+      <UniqueIdentifier>{7C6AE14D-9F89-493A-9B16-50BBF64343CE}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\Configuration.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ConsoleView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\Elevator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -48,6 +57,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Call.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ConsoleView.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\Configuration.h">
@@ -89,5 +101,10 @@
     <ClInclude Include="src\SymbolicInterface.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="config.json">
+      <Filter>Configuration Files</Filter>
+    </None>
   </ItemGroup>
 </Project>
