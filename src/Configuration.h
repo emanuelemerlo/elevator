@@ -1,35 +1,22 @@
 /**********************************************************************************
 *        File: Configuration.h
-* Description: Simulation parameters.
+* Description: Runtime simulation parameters.
 *      Author: Emanuele Merlo (emanuele.merlo@gmail.com)
 *       Notes:
 **********************************************************************************/
 
 #pragma once
 
-#include <chrono>
 #include "ILog.h"
 
-using namespace std::chrono_literals;
+#include <chrono>
+#include <string>
 
 /**
  * \brief Simulation parameters.
  */
 namespace Configuration
 {
-  namespace Building
-  {
-    /** 
-     * \brief Number of elevators to simulate.
-     */
-    constexpr unsigned int NumberOfElevators = 1;
-
-    /**
-     * \brief Total number of floors.
-     */
-    constexpr unsigned int NumberOfFloors = 5;
-  }
-
   namespace CallsGenerator
   {
     /**
@@ -38,49 +25,54 @@ namespace Configuration
     enum class Type { Fixed, Random };
 
     /**
-     * \brief Generator Type.
-     */
-    constexpr auto GeneratorType = Type::Random; // Type::Fixed;
-
-    /**
      * \brief Assigned to NumberOfCalls specify that the generator must generate continuous calls.
      */
     constexpr unsigned int EndlessCalls = static_cast<unsigned int>(-1);
+  }
 
-    /**
-     * \brief [For random generator] Number of random calls to generate.
-     */    
-    constexpr unsigned int NumberOfCalls = 5; // EndlessCalls;
+  struct Settings
+  {
+    unsigned int numberOfElevators{ 3 };
+    unsigned int numberOfFloors{ 5 };
 
-    /**
-     * \brief Minimum delay (ms) between random calls.
-     */
-    constexpr auto MinDelayBetweenCalls = std::chrono::milliseconds(3s).count();
+    CallsGenerator::Type generatorType{ CallsGenerator::Type::Random };
+    unsigned int numberOfCalls{ 5 };
+    std::chrono::milliseconds minDelayBetweenCalls{ std::chrono::seconds(3) };
+    std::chrono::milliseconds maxDelayBetweenCalls{ std::chrono::seconds(10) };
 
-    /**
-     * \brief Maximum delay (ms) between random calls.
-     */
-    constexpr auto MaxDelayBetweenCalls = std::chrono::milliseconds(10s).count();
+    std::chrono::milliseconds timeToReachTheNextFloor{ std::chrono::seconds(2) };
+    std::chrono::milliseconds enterAndExitTime{ std::chrono::seconds(2) };
+
+    ILog::TraceLevel traceLevel{ ILog::TraceLevel::Verbose };
+    ILog::LogType defaultLogType{ ILog::LogType::Screen };
+  };
+
+  bool LoadFromFile(const std::string& path);
+  const Settings& Get();
+
+  namespace Building
+  {
+    unsigned int NumberOfElevators();
+    unsigned int NumberOfFloors();
   }
 
   namespace Elevator
   {
-    /**
-     * \brief Time to reach the next floor.
-     */
-    constexpr std::chrono::milliseconds TimeToReachTheNextFloor = 2s;
+    std::chrono::milliseconds TimeToReachTheNextFloor();
+    std::chrono::milliseconds EnterAndExitTime();
+  }
 
-    /**
-     * \brief Time for people enter and exit in the elevator
-     */
-    constexpr std::chrono::milliseconds EnterAndExitTime = 2s;
+  namespace CallsGenerator
+  {
+    Type GeneratorType();
+    unsigned int NumberOfCalls();
+    long long MinDelayBetweenCalls();
+    long long MaxDelayBetweenCalls();
   }
 
   namespace Log
   {
-    constexpr ILog::TraceLevel TraceLevel = ILog::TraceLevel::Verbose;
-
-    constexpr ILog::LogType DefaultLogType = ILog::LogType::Screen;
+    ILog::TraceLevel TraceLevel();
+    ILog::LogType DefaultLogType();
   }
-
 }

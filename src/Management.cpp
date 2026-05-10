@@ -76,3 +76,17 @@ bool Management::AssignCall(std::shared_ptr<Call>& call)
   return callAssigned;
 }
 
+
+std::vector<ElevatorSnapshot> Management::GetElevatorSnapshots() const
+{
+  std::vector<ElevatorSnapshot> snapshots;
+  snapshots.reserve(m_elevators.size());
+
+  for (const auto& elevator : m_elevators)
+    snapshots.push_back(elevator->GetSnapshot());
+
+  std::sort(snapshots.begin(), snapshots.end(),
+    [](const auto& a, const auto& b) { return a.id < b.id; });
+
+  return snapshots;
+}

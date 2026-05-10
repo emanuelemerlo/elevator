@@ -13,6 +13,7 @@
 #include <string>
 #include <atomic>
 #include <condition_variable>
+#include <cstddef>
 
 #include "Floors.h"
 #include "People.h"
@@ -33,6 +34,15 @@ enum class DoorsStatus
   Closed
 };
 
+struct ElevatorSnapshot
+{
+  std::string id;
+  std::string name;
+  Floors::FloorNumber currentFloor;
+  ElevatorStatus status;
+  Direction direction;
+  std::size_t peopleCount;
+};
 
 class Elevator final
 {
@@ -58,9 +68,10 @@ public:
 
   std::string GetElevatorName() const { return m_name; }
 
-  Floors::FloorNumber GetCurrentFloor() const { return m_currentFloor; }
-  ElevatorStatus GetStatus() const { return m_status; }
-  Direction GetDirection() const { return m_currentDirection; }
+  Floors::FloorNumber GetCurrentFloor() const { return m_currentFloor.load(); }
+  ElevatorStatus GetStatus() const { return m_status.load(); }
+  Direction GetDirection() const { return m_currentDirection.load(); }
+  ElevatorSnapshot GetSnapshot() const;
 
 private:
   bool OpenDoors();
@@ -76,15 +87,16 @@ private:
   void ElevatorThreadFunction();
 
 private:
-  Floors::FloorNumber m_currentFloor = 0;
+  std::atomic<Floors::FloorNumber> m_currentFloor{ 0 };
   Floors m_floors;
 
   People m_people;
 
-  ElevatorStatus m_status = ElevatorStatus::Idle;
-  Direction m_currentDirection = Direction::None;
+  std::atomic<ElevatorStatus> m_status{ ElevatorStatus::Idle };
+  std::atomic<Direction> m_currentDirection{ Direction::None };
+  std::atomic<Direction> m_displayDirection{ Direction::None };
 
-  DoorsStatus m_doorsStatus = DoorsStatus::Closed;
+  std::atomic<DoorsStatus> m_doorsStatus{ DoorsStatus::Closed };
 
   std::condition_variable m_go;
   std::mutex m_goMutex;

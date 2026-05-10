@@ -29,12 +29,12 @@ class Floors final
 public: // Types, constants and static functions
     typedef unsigned int FloorNumber;
 
-    static constexpr FloorNumber TotalFloors = Configuration::Building::NumberOfFloors;
     static constexpr FloorNumber BottomFloor = 0U;
-    static constexpr FloorNumber TopFloor = (TotalFloors - 1);
     static constexpr FloorNumber InvalidFloor = static_cast<FloorNumber>(-1);
 
-    static bool IsValid(const FloorNumber floorNumber) { return floorNumber >= BottomFloor && floorNumber <= TopFloor; }
+    static FloorNumber TotalFloors();
+    static FloorNumber TopFloor();
+    static bool IsValid(FloorNumber floorNumber);
 
 public:
   Floors();

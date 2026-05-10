@@ -1,6 +1,8 @@
 #include "LogToScreen.h"
 
-#include <iostream>
+#include "ConsoleView.h"
+
+#include <sstream>
 
 LogToScreen::LogToScreen(const std::string& traceId): LogBase(traceId)
 {
@@ -10,14 +12,17 @@ void LogToScreen::LogFunction(const std::shared_ptr<TraceMessage>& message)
 {
   if (message->m_level >= m_traceLevelFilter)
   {
+    std::stringstream line;
     if (message->m_traceId.empty())
     {
-      std::cout << message->m_string.c_str() << std::endl;
+      line << message->m_string;
     }
     else
     {
-      std::cout << message->m_traceId << " | " << message->m_string.c_str() << std::endl;
+      line << message->m_traceId << " | " << message->m_string;
     }
+
+    ConsoleView::Instance().WriteLog(line.str());
   }
 }
 

@@ -14,8 +14,6 @@
 #include <functional>
 
 using namespace std::chrono_literals;
-using namespace Configuration::CallsGenerator;
-
 
 PeopleCallsGenerator::PeopleCallsGenerator(Management& management) : m_management(management)
 {
@@ -70,8 +68,10 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
   const auto seed = static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch().count());
   std::default_random_engine generator(seed);
 
-  const std::uniform_int_distribution<Floors::FloorNumber> randomFloor(Floors::BottomFloor, Floors::TopFloor);
-  const std::uniform_int_distribution<long long> randomDelay(MinDelayBetweenCalls, MaxDelayBetweenCalls);
+  const std::uniform_int_distribution<Floors::FloorNumber> randomFloor(Floors::BottomFloor, Floors::TopFloor());
+  const std::uniform_int_distribution<long long> randomDelay(
+    Configuration::CallsGenerator::MinDelayBetweenCalls(),
+    Configuration::CallsGenerator::MaxDelayBetweenCalls());
 
   do
   {
@@ -96,7 +96,7 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
     //m_management.AssignCall(*it);
 
     ++numberOfGeneratedCalls;
-    if (m_numberOfCalls != EndlessCalls && numberOfGeneratedCalls >= m_numberOfCalls)
+    if (m_numberOfCalls != Configuration::CallsGenerator::EndlessCalls && numberOfGeneratedCalls >= m_numberOfCalls)
       break;
 
     auto getDelay = std::bind(randomDelay, std::ref(generator));
@@ -115,12 +115,14 @@ void PeopleCallsGenerator::FixedGeneratorThread::CycleFunction(PeopleCallsGenera
   const auto seed = static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch().count());
   std::default_random_engine generator(seed);
 
-  const std::uniform_int_distribution<long long> randomDelay(MinDelayBetweenCalls, MaxDelayBetweenCalls);
+  const std::uniform_int_distribution<long long> randomDelay(
+    Configuration::CallsGenerator::MinDelayBetweenCalls(),
+    Configuration::CallsGenerator::MaxDelayBetweenCalls());
 
   std::this_thread::sleep_for(2s); // arbitrary delay before start
 
-  static constexpr auto topFloor = Floors::TopFloor; // workaround to avoid an obscure linking problem with g++
-  static constexpr auto bottomFloor = Floors::BottomFloor;
+  const auto topFloor = Floors::TopFloor();
+  const auto bottomFloor = Floors::BottomFloor;
 
   std::list<std::shared_ptr<Call>> calls = {
     std::make_shared<Call>(2,1),
