@@ -23,8 +23,10 @@ public:
 
 public:
   void SetDashboardHeight(unsigned int height);
+  void SetLogHeight(unsigned int height);
   void DrawDashboard(const std::vector<std::string>& lines);
   void WriteLog(const std::string& line);
+  void WriteFinalReport(const std::vector<std::string>& lines);
   void Shutdown();
 
 private:

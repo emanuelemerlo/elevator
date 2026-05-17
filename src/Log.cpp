@@ -14,13 +14,14 @@ std::shared_ptr<ILog>& Log::GetLog(const std::string& traceId)
     switch(m_logType)
     {
     case LogType::Screen:
+    case LogType::File:
+    case LogType::ScreenAndFile:
       m_implementation = std::make_shared<LogToScreen>(traceId);
       m_implementation->SetTraceLevelFilter(Configuration::Log::TraceLevel());
       break;
-      
-    case LogType::File: 
+
     default:
-      throw std::invalid_argument("Not yet implemented");
+      throw std::invalid_argument("Invalid log type");
     }    
   }
 

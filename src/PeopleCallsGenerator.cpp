@@ -87,13 +87,13 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
 
     peopleCallsGenerator->m_log.Trace("Generated call " + call->ToString());
 
-    const auto it = Floors::GetPeople().Insert(call);
+    Floors::GetPeople().Insert(call);
 
     // Async assign request
-    auto handle = std::async(std::launch::async, [peopleCallsGenerator, &it]() {peopleCallsGenerator->m_management.AssignCall(*it); });
+    auto handle = std::async(std::launch::async, [peopleCallsGenerator, call]() { peopleCallsGenerator->m_management.AssignCall(call); });
 
     // Synch assign request
-    //m_management.AssignCall(*it);
+    //m_management.AssignCall(call);
 
     ++numberOfGeneratedCalls;
     if (m_numberOfCalls != Configuration::CallsGenerator::EndlessCalls && numberOfGeneratedCalls >= m_numberOfCalls)
@@ -157,13 +157,13 @@ void PeopleCallsGenerator::FixedGeneratorThread::CycleFunction(PeopleCallsGenera
 
     peopleCallsGenerator->m_log.Trace("Asking call assignment " + call->ToString());
 
-    const auto it = Floors::GetPeople().Insert(call);
+    Floors::GetPeople().Insert(call);
 
     // Async assign request
-    auto handle = std::async(std::launch::async, [peopleCallsGenerator, &it]() {peopleCallsGenerator->m_management.AssignCall(*it); });
+    auto handle = std::async(std::launch::async, [peopleCallsGenerator, call]() { peopleCallsGenerator->m_management.AssignCall(call); });
 
     // Synch assign request
-    //m_management.AssignCall(*it);
+    //m_management.AssignCall(call);
 
     auto getDelay = std::bind(randomDelay, std::ref(generator));
     std::this_thread::sleep_for(std::chrono::milliseconds(getDelay()));

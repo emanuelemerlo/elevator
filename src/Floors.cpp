@@ -2,6 +2,7 @@
 
 #include <mutex>
 #include <sstream>
+#include <algorithm>
 
 #include "Call.h"
 #include "People.h"
@@ -101,6 +102,32 @@ Floors::FloorNumber Floors::GetNextStop(const FloorNumber currentFloor, Directio
   m_log.Trace(std::string("GetNextStop ") + std::to_string(currentFloor), Log::TraceLevel::Debug);
   
   return nextStop;
+}
+
+std::size_t Floors::CountStops() const
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  return static_cast<std::size_t>(std::count_if(m_stops.begin(), m_stops.end(),
+    [](const Stop& stop) { return stop.first; }));
+}
+
+std::size_t Floors::CountStopsBetween(const FloorNumber firstFloor, const FloorNumber lastFloor) const
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  if (!IsValid(firstFloor) || !IsValid(lastFloor))
+    return 0U;
+
+  const auto lowerFloor = std::min(firstFloor, lastFloor);
+  const auto upperFloor = std::max(firstFloor, lastFloor);
+
+  std::size_t stops = 0U;
+  for (auto floor = lowerFloor; floor <= upperFloor; ++floor)
+    if (m_stops[floor].first)
+      ++stops;
+
+  return stops;
 }
 
 People& Floors::GetPeople()

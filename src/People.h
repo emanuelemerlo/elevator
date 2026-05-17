@@ -27,7 +27,7 @@ public:
   People& operator=(People&&) = delete;
 
 public:
-  iterator Insert(const std::shared_ptr<Call>& call);
+  void Insert(const std::shared_ptr<Call>& call);
 
   void EnterAndExit(
     People& waitingPeople, 
@@ -45,8 +45,7 @@ public:
   void SetId(const std::string& id) { m_log.SetTraceId(id); }
   std::string GetId() const { return m_log.GetTraceId(); }
 
-  // Functions for range based loops support
-  const std::list<std::shared_ptr<Call>>& GetList() const { return *this; }
+  std::vector<std::shared_ptr<Call>> Snapshot() const;
 
 private:
   void Enter(

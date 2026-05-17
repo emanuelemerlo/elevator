@@ -17,11 +17,13 @@
     <ClCompile Include="src\Floors.cpp" />
     <ClCompile Include="src\Log.cpp" />
     <ClCompile Include="src\LogBase.cpp" />
+    <ClCompile Include="src\LogFileSink.cpp" />
     <ClCompile Include="src\LogToScreen.cpp" />
     <ClCompile Include="src\Main.cpp" />
     <ClCompile Include="src\Management.cpp" />
     <ClCompile Include="src\People.cpp" />
     <ClCompile Include="src\PeopleCallsGenerator.cpp" />
+    <ClCompile Include="src\Statistics.cpp" />
     <ClCompile Include="src\SymbolicInterface.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -33,10 +35,12 @@
     <ClInclude Include="src\ILog.h" />
     <ClInclude Include="src\Log.h" />
     <ClInclude Include="src\LogBase.h" />
+    <ClInclude Include="src\LogFileSink.h" />
     <ClInclude Include="src\LogToScreen.h" />
     <ClInclude Include="src\Management.h" />
     <ClInclude Include="src\People.h" />
     <ClInclude Include="src\PeopleCallsGenerator.h" />
+    <ClInclude Include="src\Statistics.h" />
     <ClInclude Include="src\SymbolicInterface.h" />
     <ClInclude Include="src\Watchdog.h" />
     <ClInclude Include="src\WorkerThread.h" />

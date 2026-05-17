@@ -36,6 +36,9 @@
     <ClCompile Include="src\LogBase.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\LogFileSink.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\LogToScreen.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -49,6 +52,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\PeopleCallsGenerator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Statistics.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\SymbolicInterface.cpp">
@@ -80,6 +86,9 @@
     <ClInclude Include="src\LogBase.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\LogFileSink.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\LogToScreen.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -99,6 +108,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\SymbolicInterface.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Statistics.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

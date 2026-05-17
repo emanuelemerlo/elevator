@@ -1,5 +1,6 @@
 #include "People.h"
 #include "Log.h"
+#include "Statistics.h"
 
 #include <map>
 #include <sstream>
@@ -15,12 +16,14 @@ void People::EnterAndExit(
   Exit(currentFloor);
 }
 
-std::list<std::shared_ptr<Call>>::iterator People::Insert(const std::shared_ptr<Call>& call)
+void People::Insert(const std::shared_ptr<Call>& call)
 {
   std::lock_guard<std::mutex> lock(m_mutex);
 
+  call->MarkQueued();
+  Statistics::RecordQueuedCall();
+
   push_front(call);
-  return begin();
 }
 
 void People::Trace(const Floors::FloorNumber currentFloor)
@@ -84,6 +87,14 @@ std::vector<std::pair<std::string, std::size_t>> People::CountByStartFloorAndEle
   return std::vector<std::pair<std::string, std::size_t>>(counts.begin(), counts.end());
 }
 
+std::vector<std::shared_ptr<Call>> People::Snapshot() const
+{
+  // Return a copy of the shared_ptr list so callers can iterate without holding
+  // the People mutex while elevator threads continue to board or exit passengers.
+  std::lock_guard<std::mutex> lock(m_mutex);
+  return std::vector<std::shared_ptr<Call>>(begin(), end());
+}
+
 void People::Enter(
   People& waitingPeople, 
   const Floors::FloorNumber currentFloor, 
@@ -93,6 +104,8 @@ void People::Enter(
   std::stringstream message;
   message << "People enter from floor " << std::to_string(currentFloor) << ": ";
 
+  // Move matching calls atomically from the global waiting list into this cabin.
+  // This prevents another elevator from boarding the same passenger concurrently.
   std::lock_guard<std::mutex> waitingPeopleLock(waitingPeople.m_mutex);
   auto person = waitingPeople.begin();
 
@@ -103,6 +116,7 @@ void People::Enter(
       message << (*person)->ToString();
 
       std::lock_guard<std::mutex> lock(m_mutex);
+      Statistics::RecordBoardedPassenger((*person)->GetWaitingTime());
       push_front(*person);
 
       person = waitingPeople.erase(person);
@@ -128,6 +142,7 @@ void People::Exit(const Floors::FloorNumber currentFloor)
     if ((*person)->GetDestinationFloor() == currentFloor)
     {
       message << (*person)->ToString();
+      Statistics::RecordCompletedPassenger();
       person = erase(person);
       continue;
     }

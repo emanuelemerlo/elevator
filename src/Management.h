@@ -11,6 +11,7 @@
 
 #include <vector>
 #include <memory>
+#include <mutex>
 
 #include "Elevator.h"
 
@@ -28,14 +29,17 @@ public:
   Management& operator=(Management&&) = delete;
 
 public:
-  bool AssignCall(class std::shared_ptr<class Call>& call);
+  bool AssignCall(const class std::shared_ptr<class Call>& call);
 
   void Shutdown();
+  void TraceStatistics();
 
   std::vector<ElevatorSnapshot> GetElevatorSnapshots() const;
 
 private:
   std::vector<std::unique_ptr<class Elevator>> m_elevators;
+  std::mutex m_assignMutex;
+  bool m_shutdownCompleted{ false };
 
   Log m_log;
 };

@@ -42,9 +42,11 @@ namespace Configuration
 
     std::chrono::milliseconds timeToReachTheNextFloor{ std::chrono::seconds(2) };
     std::chrono::milliseconds enterAndExitTime{ std::chrono::seconds(2) };
+    unsigned int maxPeoplePerElevator{ 8 };
 
     ILog::TraceLevel traceLevel{ ILog::TraceLevel::Verbose };
     ILog::LogType defaultLogType{ ILog::LogType::Screen };
+    std::string logFilePath{ "elevator.log" };
   };
 
   bool LoadFromFile(const std::string& path);
@@ -60,6 +62,7 @@ namespace Configuration
   {
     std::chrono::milliseconds TimeToReachTheNextFloor();
     std::chrono::milliseconds EnterAndExitTime();
+    unsigned int MaxPeople();
   }
 
   namespace CallsGenerator
@@ -74,5 +77,8 @@ namespace Configuration
   {
     ILog::TraceLevel TraceLevel();
     ILog::LogType DefaultLogType();
+    std::string FilePath();
+    bool WriteToScreen();
+    bool WriteToFile();
   }
 }

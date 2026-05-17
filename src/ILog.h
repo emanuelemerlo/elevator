@@ -14,7 +14,7 @@
  */
 struct ILog
 {
-  enum class LogType { Screen = 0, File, Default = Screen };
+  enum class LogType { Screen = 0, File, ScreenAndFile, Default = Screen };
 
   enum class TraceLevel { Debug, Verbose, Info, Warning, Error };
 
