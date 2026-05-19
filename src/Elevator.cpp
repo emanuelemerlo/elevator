@@ -126,6 +126,7 @@ bool Elevator::CloseDoors()
   {
     std::this_thread::sleep_for(1s);
     m_doorsStatus = DoorsStatus::Closed;
+    ++m_doorCycles;
     m_log.Trace("Doors closed", Log::TraceLevel::Verbose);
   }
 
@@ -167,7 +168,7 @@ void Elevator::RestoreDestinationStops()
 
   // Refresh the stops based on the people inside
   const auto currentFloor = m_currentFloor.load();
-  for (auto& person : m_people.GetList())
+  for (auto& person : m_people.Snapshot())
   {
     if (person->GetDestinationFloor() != currentFloor)
     {
@@ -182,6 +183,7 @@ void Elevator::Move(const Floors::FloorNumber requestedFloor)
   if (requestedFloor != m_currentFloor.load())
   {
     CloseDoors();
+    ++m_runCounter;
 
     do
     {
@@ -195,6 +197,7 @@ void Elevator::Move(const Floors::FloorNumber requestedFloor)
         m_log.Trace("Moving Up [" + std::to_string(currentFloor) + "]", Log::TraceLevel::Verbose);
         std::this_thread::sleep_for(Configuration::Elevator::TimeToReachTheNextFloor());
         m_currentFloor = currentFloor + 1;
+        ++m_totalFloorsTravelled;
       }
       else if (requestedFloor < currentFloor && currentFloor > 0)
       {
@@ -202,6 +205,7 @@ void Elevator::Move(const Floors::FloorNumber requestedFloor)
         m_log.Trace("Moving Down [" + std::to_string(currentFloor) + "]", Log::TraceLevel::Verbose);
         std::this_thread::sleep_for(Configuration::Elevator::TimeToReachTheNextFloor());
         m_currentFloor = currentFloor - 1;
+        ++m_totalFloorsTravelled;
       }
 
     } while (m_currentFloor.load() != requestedFloor && !m_shutdownRequested);
@@ -258,6 +262,9 @@ bool Elevator::Available(const std::shared_ptr<Call>& call) const
     return false;
 
   if (m_status.load() == ElevatorStatus::OutOfOrder)
+    return false;
+
+  if (m_people.Count() >= Configuration::Elevator::MaxPeople())
     return false;
 
   if (m_status.load() == ElevatorStatus::Idle || m_currentDirection.load() == Direction::None)

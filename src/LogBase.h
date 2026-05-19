@@ -70,6 +70,7 @@ public: // ILog
   const std::string& GetTraceId() const override { return m_traceId; }
 
   void SetTraceLevelFilter(const TraceLevel traceLevelThreshold) override { m_traceLevelFilter = traceLevelThreshold; }
+  static void FlushPendingMessages();
 
 private:
   void Enqueue(const std::shared_ptr<TraceMessage>& traceMessage);

@@ -44,6 +44,8 @@ public:
   void ClearStop(const FloorNumber floor, const Direction direction);
 
   FloorNumber GetNextStop(const FloorNumber currentFloor, Direction& currentDirection);
+  std::size_t CountStops() const;
+  std::size_t CountStopsBetween(FloorNumber firstFloor, FloorNumber lastFloor) const;
 
   static class People& GetPeople();
 
@@ -58,7 +60,7 @@ private:
 private:
   FloorStops m_stops;
 
-  std::mutex m_mutex;
+  mutable std::mutex m_mutex;
 
   Log m_log;
 };

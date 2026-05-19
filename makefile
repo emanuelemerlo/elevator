@@ -1,17 +1,30 @@
-#Usage: 
-# make		# compile all binaries
-# clean		# remove all binaries
+# Compiler and flags
+CXX := g++
+CXXFLAGS := -g -pthread -Wall -std=c++17
 
-.PHONY := all
+# Directories and files
+SRC_DIR := src
+OBJ_DIR := obj
+TARGET := Elevator.exe
 
-.DEFAULT_GOAL := all
+SRCS := $(wildcard $(SRC_DIR)/*.cpp)
+OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRCS))
 
-all:
-	@echo "Building Elevator.run"
-	g++ -g -pthread -Wall src/Configuration.cpp src/ConsoleView.cpp src/Elevator.cpp src/Floors.cpp src/Log.cpp src/LogBase.cpp src/LogToScreen.cpp src/Main.cpp src/Management.cpp src/People.cpp src/PeopleCallsGenerator.cpp src/SymbolicInterface.cpp -oElevator.run
+.PHONY: all clean
 
-.PHONY: clean
+all: $(TARGET)
 
-clean: 
+$(TARGET): $(OBJS)
+	@echo "Linking $(TARGET)..."
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OBJ_DIR):
+	mkdir -p $(OBJ_DIR)
+
+clean:
 	@echo "Cleaning up..."
-	rm -f Elevator.run
+	rm -rf $(OBJ_DIR) $(TARGET)

@@ -14,6 +14,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 
 #include "Floors.h"
 #include "People.h"
@@ -72,6 +73,13 @@ public:
   ElevatorStatus GetStatus() const { return m_status.load(); }
   Direction GetDirection() const { return m_currentDirection.load(); }
   ElevatorSnapshot GetSnapshot() const;
+  std::size_t GetPeopleCount() const { return m_people.Count(); }
+  std::size_t GetQueuedStopsCount() const { return m_floors.CountStops(); }
+  std::size_t GetQueuedStopsBetween(Floors::FloorNumber firstFloor, Floors::FloorNumber lastFloor) const
+    { return m_floors.CountStopsBetween(firstFloor, lastFloor); }
+  std::uint64_t GetTotalFloorsTravelled() const { return m_totalFloorsTravelled.load(); }
+  std::uint64_t GetRunCounter() const { return m_runCounter.load(); }
+  std::uint64_t GetDoorCycles() const { return m_doorCycles.load(); }
 
 private:
   bool OpenDoors();
@@ -107,6 +115,10 @@ private:
   std::unique_ptr<std::thread> m_thread;
   std::atomic_bool m_shutdownRequested{ false };
   std::atomic_bool m_working{ false };
+
+  std::atomic<std::uint64_t> m_totalFloorsTravelled{ 0U };
+  std::atomic<std::uint64_t> m_runCounter{ 0U };
+  std::atomic<std::uint64_t> m_doorCycles{ 0U };
 
   Log m_log;
 };

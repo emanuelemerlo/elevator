@@ -84,6 +84,10 @@ namespace
     const auto normalized = ToLower(value);
     if (normalized == "screen")
       return ILog::LogType::Screen;
+    if (normalized == "file")
+      return ILog::LogType::File;
+    if (normalized == "screenandfile" || normalized == "screen_and_file" || normalized == "both")
+      return ILog::LogType::ScreenAndFile;
 
     throw std::invalid_argument("Invalid log.defaultLogType value: " + value);
   }
@@ -101,6 +105,9 @@ namespace
 
     if (settings.timeToReachTheNextFloor.count() == 0)
       throw std::invalid_argument("elevator.timeToReachTheNextFloorMs must be greater than 0");
+
+    if (settings.maxPeoplePerElevator == 0)
+      throw std::invalid_argument("elevator.maxPeople must be greater than 0");
   }
 }
 
@@ -138,11 +145,17 @@ bool Configuration::LoadFromFile(const std::string& path)
   if (FindUnsigned(json, "enterAndExitTimeMs", value))
     settings.enterAndExitTime = std::chrono::milliseconds(value);
 
+  if (FindUnsigned(json, "maxPeople", value))
+    settings.maxPeoplePerElevator = value;
+
   if (FindString(json, "traceLevel", text))
     settings.traceLevel = ParseTraceLevel(text);
 
   if (FindString(json, "defaultLogType", text))
     settings.defaultLogType = ParseLogType(text);
+
+  if (FindString(json, "filePath", text))
+    settings.logFilePath = text;
 
   Validate(settings);
   g_settings = settings;
@@ -174,6 +187,11 @@ std::chrono::milliseconds Configuration::Elevator::EnterAndExitTime()
   return Get().enterAndExitTime;
 }
 
+unsigned int Configuration::Elevator::MaxPeople()
+{
+  return Get().maxPeoplePerElevator;
+}
+
 Configuration::CallsGenerator::Type Configuration::CallsGenerator::GeneratorType()
 {
   return Get().generatorType;
@@ -202,4 +220,21 @@ ILog::TraceLevel Configuration::Log::TraceLevel()
 ILog::LogType Configuration::Log::DefaultLogType()
 {
   return Get().defaultLogType;
+}
+
+std::string Configuration::Log::FilePath()
+{
+  return Get().logFilePath;
+}
+
+bool Configuration::Log::WriteToScreen()
+{
+  return Get().defaultLogType == ILog::LogType::Screen ||
+    Get().defaultLogType == ILog::LogType::ScreenAndFile;
+}
+
+bool Configuration::Log::WriteToFile()
+{
+  return Get().defaultLogType == ILog::LogType::File ||
+    Get().defaultLogType == ILog::LogType::ScreenAndFile;
 }

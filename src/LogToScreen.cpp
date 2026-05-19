@@ -1,6 +1,8 @@
 #include "LogToScreen.h"
 
+#include "Configuration.h"
 #include "ConsoleView.h"
+#include "LogFileSink.h"
 
 #include <sstream>
 
@@ -12,17 +14,19 @@ void LogToScreen::LogFunction(const std::shared_ptr<TraceMessage>& message)
 {
   if (message->m_level >= m_traceLevelFilter)
   {
-    std::stringstream line;
+    std::stringstream formattedLine;
     if (message->m_traceId.empty())
-    {
-      line << message->m_string;
-    }
+      formattedLine << message->m_string;
     else
-    {
-      line << message->m_traceId << " | " << message->m_string;
-    }
+      formattedLine << message->m_traceId << " | " << message->m_string;
 
-    ConsoleView::Instance().WriteLog(line.str());
+    const auto line = formattedLine.str();
+
+    if (Configuration::Log::WriteToScreen())
+      ConsoleView::Instance().WriteLog(line);
+
+    if (Configuration::Log::WriteToFile())
+      LogFileSink::WriteLine(line);
   }
 }
 

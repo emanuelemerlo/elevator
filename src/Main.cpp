@@ -2,6 +2,7 @@
 #include "PeopleCallsGenerator.h"
 #include "Configuration.h"
 #include "Log.h"
+#include "Statistics.h"
 #include "SymbolicInterface.h"
 
 #include <iostream>
@@ -24,6 +25,8 @@ int main()
 
   try
   {
+    Statistics::Reset();
+
     Management elevatorsManagement(Configuration::Building::NumberOfElevators());
 
     PeopleCallsGenerator callsGenerator(elevatorsManagement);
@@ -46,13 +49,13 @@ int main()
     symbolicInterface.Stop();
     callsGenerator.Shutdown();
     elevatorsManagement.Shutdown();
+    elevatorsManagement.TraceStatistics();
   }
   catch(std::exception& e)
   {
     log.Trace(std::string("** CAUGHT EXCEPTION ** ") + e.what(), Log::TraceLevel::Error);
   }
 
-  std::this_thread::sleep_for(std::chrono::seconds(10));
-
+  std::this_thread::sleep_for(std::chrono::seconds(30));
   return 0;
 }

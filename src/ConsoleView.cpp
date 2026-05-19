@@ -50,6 +50,18 @@ void ConsoleView::SetDashboardHeight(const unsigned int height)
   m_dashboardHeight = height;
 }
 
+void ConsoleView::SetLogHeight(const unsigned int height)
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+  m_logHeight = height;
+
+  while (m_logLines.size() > m_logHeight)
+    m_logLines.pop_front();
+
+  if (m_initialized)
+    DrawLogArea();
+}
+
 void ConsoleView::DrawDashboard(const std::vector<std::string>& lines)
 {
   std::lock_guard<std::mutex> lock(m_mutex);
@@ -76,6 +88,23 @@ void ConsoleView::WriteLog(const std::string& line)
     m_logLines.pop_front();
 
   DrawLogArea();
+}
+
+void ConsoleView::WriteFinalReport(const std::vector<std::string>& lines)
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+  Initialize();
+
+  // The final report is not a rolling log. It replaces the dashboard so long
+  // statistic tables are shown in full, including every configured elevator.
+  m_logLines.clear();
+
+  std::cout << Ansi << "2J" << Ansi << "1;1H";
+
+  for (const auto& line : lines)
+    std::cout << ClipToConsoleWidth(line) << '\n';
+
+  std::cout << Ansi << "?25h" << std::flush;
 }
 
 void ConsoleView::Shutdown()

@@ -4,6 +4,7 @@
 #include "Configuration.h"
 
 #include <sstream>
+#include <thread>
 #include <utility>
 
 std::deque<std::shared_ptr<LogBase::TraceMessage>> LogBase::m_messageQueue;
@@ -47,6 +48,20 @@ void LogBase::Enqueue(const std::shared_ptr<TraceMessage>& traceMessage)
   m_messageQueue.push_back(traceMessage);
 
   GetThreadInstance()->Go();
+}
+
+void LogBase::FlushPendingMessages()
+{
+  for (;;)
+  {
+    {
+      std::lock_guard<std::mutex> lockMessageQueue(*m_messageQueueMutex);
+      if (m_messageQueue.empty())
+        return;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
 }
 
 std::unique_ptr<LogBase::TraceThread>& LogBase::GetThreadInstance()

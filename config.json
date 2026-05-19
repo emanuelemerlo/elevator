@@ -1,20 +1,22 @@
 {
   "building": {
-    "numberOfElevators": 3,
+    "numberOfElevators": 5,
     "numberOfFloors": 10
   },
   "callsGenerator": {
     "type": "Random",
     "numberOfCalls": 50,
-    "minDelayBetweenCallsMs": 2000,
-    "maxDelayBetweenCallsMs": 4000
+    "minDelayBetweenCallsMs": 200,
+    "maxDelayBetweenCallsMs": 400
   },
   "elevator": {
-    "timeToReachTheNextFloorMs": 5000,
-    "enterAndExitTimeMs": 2000
+    "timeToReachTheNextFloorMs": 500,
+    "enterAndExitTimeMs": 200,
+    "maxPeople": 8
   },
   "log": {
     "traceLevel": "Info",
-    "defaultLogType": "Screen"
+    "defaultLogType": "Screen",
+    "filePath": "elevator.log"
   }
 }
