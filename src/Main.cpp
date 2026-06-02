@@ -26,6 +26,7 @@ int main()
   try
   {
     Statistics::Reset();
+    Configuration::Simulation::StartClock();
 
     Management elevatorsManagement(Configuration::Building::NumberOfElevators());
 

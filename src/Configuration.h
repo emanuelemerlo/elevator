@@ -38,6 +38,7 @@ namespace Configuration
     CallsGenerator::Type generatorType{ CallsGenerator::Type::Random };
     unsigned int numberOfCalls{ 5 };
     unsigned int maxConcurrentCalls{ 600 };
+    unsigned int numberOfSimulationDays{ 1 };
     std::chrono::milliseconds simulationDayDuration{ std::chrono::minutes(2) };
     std::chrono::milliseconds minDelayBetweenCalls{ std::chrono::seconds(3) };
     std::chrono::milliseconds maxDelayBetweenCalls{ std::chrono::seconds(10) };
@@ -72,9 +73,19 @@ namespace Configuration
     Type GeneratorType();
     unsigned int NumberOfCalls();
     unsigned int MaxConcurrentCalls();
+    unsigned int NumberOfSimulationDays();
     long long SimulationDayDuration();
     long long MinDelayBetweenCalls();
     long long MaxDelayBetweenCalls();
+  }
+
+  namespace Simulation
+  {
+    void StartClock();
+    double CurrentHour();
+    unsigned int CurrentDay();
+    bool Completed();
+    std::string CurrentDayTimeLabel();
   }
 
   namespace Log

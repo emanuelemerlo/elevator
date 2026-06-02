@@ -91,7 +91,7 @@ void SymbolicInterface::Start()
   if (m_thread != nullptr)
     return;
 
-  ConsoleView::Instance().SetDashboardHeight(Configuration::Building::NumberOfFloors() + 5);
+  ConsoleView::Instance().SetDashboardHeight(Configuration::Building::NumberOfFloors() + 6);
   m_stopRequested = false;
   m_thread = std::make_unique<std::thread>(&SymbolicInterface::ThreadFunction, this);
 }
@@ -126,7 +126,7 @@ void SymbolicInterface::Render() const
   std::stringstream line;
   const auto waitingColumnWidth = WaitingColumnWidth(snapshots);
 
-  screen.emplace_back("=== Elevator symbolic interface ===");
+  screen.emplace_back("=== Elevator symbolic interface ===  " + Configuration::Simulation::CurrentDayTimeLabel());
   screen.emplace_back("Legend: [ID Dir People]  Dir: ^ up, v down, - stopped  A:2 = two waiting people assigned to elevator A");
   screen.emplace_back("");
 

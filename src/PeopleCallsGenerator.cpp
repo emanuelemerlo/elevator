@@ -44,20 +44,9 @@ namespace
     return std::clamp(0.25 + morning + lunch + dinner, 0.25, 1.0);
   }
 
-  double SimulatedHour(const std::chrono::steady_clock::time_point startTime)
+  std::chrono::milliseconds ScaleDelayForDailyProfile(const long long baseDelayMs)
   {
-    const auto dayDurationMs = static_cast<double>(Configuration::CallsGenerator::SimulationDayDuration());
-    const auto elapsedMs = static_cast<double>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime).count());
-
-    return std::fmod(elapsedMs, dayDurationMs) / dayDurationMs * 24.0;
-  }
-
-  std::chrono::milliseconds ScaleDelayForDailyProfile(
-    const long long baseDelayMs,
-    const std::chrono::steady_clock::time_point startTime)
-  {
-    const auto intensity = DailyTrafficIntensity(SimulatedHour(startTime));
+    const auto intensity = DailyTrafficIntensity(Configuration::Simulation::CurrentHour());
     const auto scaledDelayMs = static_cast<long long>(static_cast<double>(baseDelayMs) / intensity);
     return std::chrono::milliseconds(std::max<long long>(1LL, scaledDelayMs));
   }
@@ -114,7 +103,6 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
 
   const auto seed = static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch().count());
   std::default_random_engine generator(seed);
-  const auto generationStartTime = std::chrono::steady_clock::now();
 
   const std::uniform_int_distribution<Floors::FloorNumber> randomFloor(Floors::BottomFloor, Floors::TopFloor());
   const std::uniform_int_distribution<long long> randomDelay(
@@ -123,11 +111,12 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
 
   do
   {
+    if (Configuration::Simulation::Completed())
+      break;
+
     if (MaxConcurrentCallsReached())
     {
-      std::this_thread::sleep_for(ScaleDelayForDailyProfile(
-        Configuration::CallsGenerator::MaxDelayBetweenCalls(),
-        generationStartTime));
+      std::this_thread::sleep_for(ScaleDelayForDailyProfile(Configuration::CallsGenerator::MaxDelayBetweenCalls()));
       continue;
     }
 
@@ -156,7 +145,7 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
       break;
 
     auto getDelay = std::bind(randomDelay, std::ref(generator));
-    std::this_thread::sleep_for(ScaleDelayForDailyProfile(getDelay(), generationStartTime));
+    std::this_thread::sleep_for(ScaleDelayForDailyProfile(getDelay()));
 
   } while (!StopRequested());
 

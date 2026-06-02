@@ -7,6 +7,7 @@
     "type": "Random",
     "numberOfCalls": 50,
     "maxConcurrentCalls": 600,
+    "numberOfSimulationDays": 1,
     "simulationDayDurationMs": 120000,
     "minDelayBetweenCallsMs": 200,
     "maxDelayBetweenCallsMs": 400

@@ -39,6 +39,7 @@ Configuration fields:
 | `callsGenerator.type` | How passenger calls are created. | Use `Random` for automatic random calls, or `Fixed` to replay a predefined set of calls. |
 | `callsGenerator.numberOfCalls` | How many random calls are generated before the generator stops. | Used only with `Random`. Use values like `5`, `20` or `100`; use `4294967295` only when you want calls to continue until the program is stopped. |
 | `callsGenerator.maxConcurrentCalls` | Maximum number of active calls/passengers in the simulated building. | Use a finite population-like limit such as `600`. When the limit is reached, the generator pauses until passengers complete their trips. |
+| `callsGenerator.numberOfSimulationDays` | How many simulated days the random generator should run. | Use `1` or more. The generator stops when either this limit or `numberOfCalls` is reached. |
 | `callsGenerator.simulationDayDurationMs` | Duration of one simulated 24-hour traffic cycle. | The random generator repeats a daily profile with peaks in the morning, around lunch and around dinner. `120000` means a full day lasts 2 real minutes. |
 | `callsGenerator.minDelayBetweenCallsMs` | The shortest wait between two generated calls. | Time is expressed in milliseconds: `1000` means 1 second. This value must not be higher than `maxDelayBetweenCallsMs`. |
 | `callsGenerator.maxDelayBetweenCallsMs` | The longest wait between two generated calls. | Time is expressed in milliseconds. Increase it for a calmer simulation, decrease it for busier traffic. |
@@ -114,6 +115,7 @@ The first table summarizes passenger flow:
 | `Assigned calls` | Calls accepted by an elevator. |
 | `Boarded passengers` | Passengers who entered an elevator. |
 | `Completed passengers` | Passengers who reached their destination floor. |
+| `Simulation time` | Current simulated day and time of day when the report is printed. The same value is shown live in the symbolic interface. |
 | `Average wait` | Average time from call creation to passenger boarding, shown in seconds. |
 | `Max wait` | Longest observed waiting time, shown in seconds. |
 

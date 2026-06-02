@@ -2,14 +2,17 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
+#include <iomanip>
 
 namespace
 {
   Configuration::Settings g_settings;
+  std::chrono::steady_clock::time_point g_simulationStartTime = std::chrono::steady_clock::now();
 
   std::string ReadFile(const std::string& path)
   {
@@ -106,6 +109,9 @@ namespace
     if (settings.maxConcurrentCalls == 0)
       throw std::invalid_argument("callsGenerator.maxConcurrentCalls must be greater than 0");
 
+    if (settings.numberOfSimulationDays == 0)
+      throw std::invalid_argument("callsGenerator.numberOfSimulationDays must be greater than 0");
+
     if (settings.simulationDayDuration.count() == 0)
       throw std::invalid_argument("callsGenerator.simulationDayDurationMs must be greater than 0");
 
@@ -141,6 +147,9 @@ bool Configuration::LoadFromFile(const std::string& path)
 
   if (FindUnsigned(json, "maxConcurrentCalls", value))
     settings.maxConcurrentCalls = value;
+
+  if (FindUnsigned(json, "numberOfSimulationDays", value))
+    settings.numberOfSimulationDays = value;
 
   if (FindUnsigned(json, "simulationDayDurationMs", value))
     settings.simulationDayDuration = std::chrono::milliseconds(value);
@@ -219,6 +228,11 @@ unsigned int Configuration::CallsGenerator::MaxConcurrentCalls()
   return Get().maxConcurrentCalls;
 }
 
+unsigned int Configuration::CallsGenerator::NumberOfSimulationDays()
+{
+  return Get().numberOfSimulationDays;
+}
+
 long long Configuration::CallsGenerator::SimulationDayDuration()
 {
   return Get().simulationDayDuration.count();
@@ -259,4 +273,53 @@ bool Configuration::Log::WriteToFile()
 {
   return Get().defaultLogType == ILog::LogType::File ||
     Get().defaultLogType == ILog::LogType::ScreenAndFile;
+}
+
+void Configuration::Simulation::StartClock()
+{
+  g_simulationStartTime = std::chrono::steady_clock::now();
+}
+
+double Configuration::Simulation::CurrentHour()
+{
+  const auto dayDurationMs = static_cast<double>(CallsGenerator::SimulationDayDuration());
+  const auto elapsedMs = static_cast<double>(
+    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - g_simulationStartTime).count());
+
+  return std::fmod(elapsedMs, dayDurationMs) / dayDurationMs * 24.0;
+}
+
+unsigned int Configuration::Simulation::CurrentDay()
+{
+  const auto dayDurationMs = CallsGenerator::SimulationDayDuration();
+  const auto elapsedMs =
+    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - g_simulationStartTime).count();
+  const auto elapsedDays = static_cast<unsigned int>(elapsedMs / dayDurationMs);
+
+  return std::min(elapsedDays + 1U, CallsGenerator::NumberOfSimulationDays());
+}
+
+bool Configuration::Simulation::Completed()
+{
+  const auto targetDurationMs =
+    CallsGenerator::SimulationDayDuration() * static_cast<long long>(CallsGenerator::NumberOfSimulationDays());
+  const auto elapsedMs =
+    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - g_simulationStartTime).count();
+
+  return elapsedMs >= targetDurationMs;
+}
+
+std::string Configuration::Simulation::CurrentDayTimeLabel()
+{
+  const auto hour = CurrentHour();
+  const auto wholeMinutes = static_cast<unsigned int>(hour * 60.0) % (24U * 60U);
+  const auto hours = wholeMinutes / 60U;
+  const auto minutes = wholeMinutes % 60U;
+
+  std::stringstream label;
+  label << "Day " << CurrentDay() << "/" << CallsGenerator::NumberOfSimulationDays()
+        << " " << std::setw(2) << std::setfill('0') << hours
+        << ":" << std::setw(2) << std::setfill('0') << minutes
+        << std::setfill(' ');
+  return label.str();
 }

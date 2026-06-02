@@ -474,6 +474,7 @@ void Management::TraceStatistics()
   addGlobalStat("Assigned calls", std::to_string(statistics.assignedCalls));
   addGlobalStat("Boarded passengers", std::to_string(statistics.boardedPassengers));
   addGlobalStat("Completed passengers", std::to_string(statistics.completedPassengers));
+  addGlobalStat("Simulation time", Configuration::Simulation::CurrentDayTimeLabel());
   addGlobalStat("Average wait", FormatSeconds(statistics.AverageWaitTimeMs()));
   addGlobalStat("Max wait", FormatSeconds(static_cast<double>(statistics.maxWaitTimeMs)));
 
