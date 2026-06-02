@@ -13,8 +13,8 @@ void People::EnterAndExit(
   const std::string& elevatorId)
 {
   waitingPeople.Trace(currentFloor);
-  Enter(waitingPeople, currentFloor, currentDirection, elevatorId);
   Exit(currentFloor);
+  Enter(waitingPeople, currentFloor, currentDirection, elevatorId);
 }
 
 void People::Insert(const std::shared_ptr<Call>& call)

@@ -16,15 +16,11 @@ private:
   class RandomGeneratorThread final : public WorkerThread<PeopleCallsGenerator>
   {
   public:
-    explicit RandomGeneratorThread(PeopleCallsGenerator* peopleCallsGenerator, const unsigned int numberOfCalls) :
-      WorkerThread<PeopleCallsGenerator>(peopleCallsGenerator),
-      m_numberOfCalls(numberOfCalls) {}
+    explicit RandomGeneratorThread(PeopleCallsGenerator* peopleCallsGenerator) :
+      WorkerThread<PeopleCallsGenerator>(peopleCallsGenerator) {}
 
   protected:
     void CycleFunction(PeopleCallsGenerator* peopleCallsGenerator) override;
-
-  private:
-    unsigned int m_numberOfCalls = 0;
   };
 
   class FixedGeneratorThread final : public WorkerThread<PeopleCallsGenerator>
@@ -50,7 +46,7 @@ public:
   PeopleCallsGenerator operator=(PeopleCallsGenerator&&) = delete;
 
 public:
-  void StartRandom(const unsigned int numberOfCalls = static_cast<unsigned int>(-1));
+  void StartRandom();
   void StartFixed();
 
   void Shutdown();

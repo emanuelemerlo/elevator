@@ -30,7 +30,7 @@ PeopleCallsGenerator::~PeopleCallsGenerator()
 
 namespace
 {
-  double DailyTrafficIntensity(const double hour)
+  double DailyTrafficWeight(const double hour)
   {
     const auto peak = [hour](const double center, const double width, const double weight)
     {
@@ -41,14 +41,43 @@ namespace
     const auto morning = peak(8.25, 1.25, 1.00);
     const auto lunch = peak(12.50, 1.00, 0.70);
     const auto dinner = peak(19.00, 1.35, 0.75);
-    return std::clamp(0.25 + morning + lunch + dinner, 0.25, 1.0);
+    return 0.25 + morning + lunch + dinner;
   }
 
-  std::chrono::milliseconds ScaleDelayForDailyProfile(const long long baseDelayMs)
+  double AverageDailyTrafficWeight()
   {
-    const auto intensity = DailyTrafficIntensity(Configuration::Simulation::CurrentHour());
-    const auto scaledDelayMs = static_cast<long long>(static_cast<double>(baseDelayMs) / intensity);
-    return std::chrono::milliseconds(std::max<long long>(1LL, scaledDelayMs));
+    constexpr unsigned int SamplesPerDay = 96U;
+
+    double totalWeight = 0.0;
+    for (auto sample = 0U; sample < SamplesPerDay; ++sample)
+    {
+      const auto hour = static_cast<double>(sample) / static_cast<double>(SamplesPerDay) * 24.0;
+      totalWeight += DailyTrafficWeight(hour);
+    }
+
+    return totalWeight / static_cast<double>(SamplesPerDay);
+  }
+
+  double DailyTrafficIntensity()
+  {
+    return std::max(0.1, DailyTrafficWeight(Configuration::Simulation::CurrentHour()) / AverageDailyTrafficWeight());
+  }
+
+  std::chrono::milliseconds DelayForDailyProfile(const double jitter)
+  {
+    const auto averageCallsPerDay = static_cast<double>(Configuration::CallsGenerator::AverageCallsPerDay());
+    const auto simulatedDayDurationMs = static_cast<double>(Configuration::CallsGenerator::SimulationDayDuration());
+    const auto averageDelayMs = simulatedDayDurationMs / averageCallsPerDay;
+    const auto profiledDelayMs = averageDelayMs / DailyTrafficIntensity() * jitter;
+
+    const auto minDelayMs = Configuration::CallsGenerator::MinDelayBetweenCalls();
+    const auto maxDelayMs = Configuration::CallsGenerator::MaxDelayBetweenCalls();
+    const auto boundedDelayMs = std::clamp(
+      static_cast<long long>(profiledDelayMs),
+      std::max(1LL, minDelayMs),
+      std::max(std::max(1LL, minDelayMs), maxDelayMs));
+
+    return std::chrono::milliseconds(boundedDelayMs);
   }
 
   bool MaxConcurrentCallsReached()
@@ -61,12 +90,12 @@ namespace
   }
 }
 
-void PeopleCallsGenerator::StartRandom(const unsigned int numberOfCalls)
+void PeopleCallsGenerator::StartRandom()
 {
   if (m_generatorThread != nullptr && m_generatorThread->IsActive())
     m_generatorThread->Stop();
 
-  m_generatorThread = std::make_unique<RandomGeneratorThread>(this, numberOfCalls);
+  m_generatorThread = std::make_unique<RandomGeneratorThread>(this);
   m_generatorThread->Start();
   m_generatorThread->Go();
 }
@@ -99,15 +128,11 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
 
   std::this_thread::sleep_for(2s); // arbitrary delay before start
 
-  unsigned int numberOfGeneratedCalls = 0;
-
   const auto seed = static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch().count());
   std::default_random_engine generator(seed);
 
   const std::uniform_int_distribution<Floors::FloorNumber> randomFloor(Floors::BottomFloor, Floors::TopFloor());
-  const std::uniform_int_distribution<long long> randomDelay(
-    Configuration::CallsGenerator::MinDelayBetweenCalls(),
-    Configuration::CallsGenerator::MaxDelayBetweenCalls());
+  const std::uniform_real_distribution<double> randomJitter(0.75, 1.25);
 
   do
   {
@@ -116,7 +141,7 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
 
     if (MaxConcurrentCallsReached())
     {
-      std::this_thread::sleep_for(ScaleDelayForDailyProfile(Configuration::CallsGenerator::MaxDelayBetweenCalls()));
+      std::this_thread::sleep_for(DelayForDailyProfile(1.0));
       continue;
     }
 
@@ -140,12 +165,8 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
     // Synch assign request
     //m_management.AssignCall(call);
 
-    ++numberOfGeneratedCalls;
-    if (m_numberOfCalls != Configuration::CallsGenerator::EndlessCalls && numberOfGeneratedCalls >= m_numberOfCalls)
-      break;
-
-    auto getDelay = std::bind(randomDelay, std::ref(generator));
-    std::this_thread::sleep_for(ScaleDelayForDailyProfile(getDelay()));
+    auto getJitter = std::bind(randomJitter, std::ref(generator));
+    std::this_thread::sleep_for(DelayForDailyProfile(getJitter()));
 
   } while (!StopRequested());
 

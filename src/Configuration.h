@@ -24,10 +24,6 @@ namespace Configuration
      */
     enum class Type { Fixed, Random };
 
-    /**
-     * \brief Assigned to NumberOfCalls specify that the generator must generate continuous calls.
-     */
-    constexpr unsigned int EndlessCalls = static_cast<unsigned int>(-1);
   }
 
   struct Settings
@@ -36,7 +32,7 @@ namespace Configuration
     unsigned int numberOfFloors{ 5 };
 
     CallsGenerator::Type generatorType{ CallsGenerator::Type::Random };
-    unsigned int numberOfCalls{ 5 };
+    unsigned int averageCallsPerDay{ 600 };
     unsigned int maxConcurrentCalls{ 600 };
     unsigned int numberOfSimulationDays{ 1 };
     std::chrono::milliseconds simulationDayDuration{ std::chrono::minutes(2) };
@@ -71,7 +67,7 @@ namespace Configuration
   namespace CallsGenerator
   {
     Type GeneratorType();
-    unsigned int NumberOfCalls();
+    unsigned int AverageCallsPerDay();
     unsigned int MaxConcurrentCalls();
     unsigned int NumberOfSimulationDays();
     long long SimulationDayDuration();

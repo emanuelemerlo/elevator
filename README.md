@@ -102,6 +102,9 @@ indicators in the final statistics.
 When the simulation stops, the dashboard is replaced by a full final report. This
 report is not limited by the normal rolling log window, so all configured elevators
 are shown.
+Long table values are wrapped onto continuation rows so recommendation reasons and
+other explanatory fields keep the report aligned instead of breaking the table
+layout.
 
 If file logging is enabled, the same final report is appended to the configured log
 file. This is useful when the screen report is long or when you want to compare

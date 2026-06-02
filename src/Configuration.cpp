@@ -106,6 +106,9 @@ namespace
     if (settings.minDelayBetweenCalls > settings.maxDelayBetweenCalls)
       throw std::invalid_argument("callsGenerator.minDelayBetweenCallsMs must be <= maxDelayBetweenCallsMs");
 
+    if (settings.averageCallsPerDay == 0)
+      throw std::invalid_argument("callsGenerator.averageCallsPerDay must be greater than 0");
+
     if (settings.maxConcurrentCalls == 0)
       throw std::invalid_argument("callsGenerator.maxConcurrentCalls must be greater than 0");
 
@@ -142,8 +145,8 @@ bool Configuration::LoadFromFile(const std::string& path)
   if (FindString(json, "type", text))
     settings.generatorType = ParseGeneratorType(text);
 
-  if (FindUnsigned(json, "numberOfCalls", value))
-    settings.numberOfCalls = value;
+  if (FindUnsigned(json, "averageCallsPerDay", value))
+    settings.averageCallsPerDay = value;
 
   if (FindUnsigned(json, "maxConcurrentCalls", value))
     settings.maxConcurrentCalls = value;
@@ -218,9 +221,9 @@ Configuration::CallsGenerator::Type Configuration::CallsGenerator::GeneratorType
   return Get().generatorType;
 }
 
-unsigned int Configuration::CallsGenerator::NumberOfCalls()
+unsigned int Configuration::CallsGenerator::AverageCallsPerDay()
 {
-  return Get().numberOfCalls;
+  return Get().averageCallsPerDay;
 }
 
 unsigned int Configuration::CallsGenerator::MaxConcurrentCalls()
