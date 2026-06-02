@@ -1,6 +1,7 @@
 #include "People.h"
 #include "Log.h"
 #include "Statistics.h"
+#include "Configuration.h"
 
 #include <map>
 #include <sstream>
@@ -12,8 +13,8 @@ void People::EnterAndExit(
   const std::string& elevatorId)
 {
   waitingPeople.Trace(currentFloor);
-  Enter(waitingPeople, currentFloor, currentDirection, elevatorId);
   Exit(currentFloor);
+  Enter(waitingPeople, currentFloor, currentDirection, elevatorId);
 }
 
 void People::Insert(const std::shared_ptr<Call>& call)
@@ -63,6 +64,18 @@ std::size_t People::Count() const
   return size();
 }
 
+std::size_t People::CountByAssignedElevator(const std::string& elevatorId) const
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  std::size_t count = 0;
+  for (const auto& person : *this)
+    if (person->GetAssignedElevator() == elevatorId)
+      ++count;
+
+  return count;
+}
+
 std::size_t People::CountByStartFloor(const Floors::FloorNumber floor) const
 {
   std::lock_guard<std::mutex> lock(m_mutex);
@@ -106,18 +119,25 @@ void People::Enter(
 
   // Move matching calls atomically from the global waiting list into this cabin.
   // This prevents another elevator from boarding the same passenger concurrently.
-  std::lock_guard<std::mutex> waitingPeopleLock(waitingPeople.m_mutex);
+  std::scoped_lock lock(m_mutex, waitingPeople.m_mutex);
   auto person = waitingPeople.begin();
 
   while (person != waitingPeople.end())
   {
     if ((*person)->GetStartFloor() == currentFloor && (*person)->GetDirection() == currentDirection && (*person)->GetAssignedElevator() == elevatorId)
     {
+      if (size() >= Configuration::Elevator::MaxPeople())
+      {
+        message << "FULL ";
+        ++person;
+        continue;
+      }
+
       message << (*person)->ToString();
 
-      std::lock_guard<std::mutex> lock(m_mutex);
       Statistics::RecordBoardedPassenger((*person)->GetWaitingTime());
       push_front(*person);
+      Statistics::RecordCabinPeopleCount(size());
 
       person = waitingPeople.erase(person);
       continue;

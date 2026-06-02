@@ -78,6 +78,28 @@ void Statistics::RecordAssignmentDecision(
   g_statistics.maxAssignmentTimeUs = std::max(g_statistics.maxAssignmentTimeUs, assignmentTimeUs);
 }
 
+void Statistics::RecordCapacityLimitedDecision()
+{
+  std::lock_guard<std::mutex> lock(g_mutex);
+  ++g_statistics.capacityLimitedDecisions;
+}
+
+void Statistics::RecordCommittedElevatorLoad(const std::size_t committedLoad)
+{
+  std::lock_guard<std::mutex> lock(g_mutex);
+  g_statistics.maxCommittedElevatorLoad = std::max(
+    g_statistics.maxCommittedElevatorLoad,
+    static_cast<std::uint64_t>(committedLoad));
+}
+
+void Statistics::RecordCabinPeopleCount(const std::size_t cabinPeopleCount)
+{
+  std::lock_guard<std::mutex> lock(g_mutex);
+  g_statistics.maxCabinPeople = std::max(
+    g_statistics.maxCabinPeople,
+    static_cast<std::uint64_t>(cabinPeopleCount));
+}
+
 void Statistics::RecordBoardedPassenger(const std::chrono::milliseconds waitTime)
 {
   std::lock_guard<std::mutex> lock(g_mutex);

@@ -38,11 +38,14 @@ Configuration fields:
 | `building.numberOfFloors` | How many floors the building has. | Use at least `2`. The first floor is `0`, so `5` means floors from `0` to `4`. |
 | `callsGenerator.type` | How passenger calls are created. | Use `Random` for automatic random calls, or `Fixed` to replay a predefined set of calls. |
 | `callsGenerator.numberOfCalls` | How many random calls are generated before the generator stops. | Used only with `Random`. Use values like `5`, `20` or `100`; use `4294967295` only when you want calls to continue until the program is stopped. |
+| `callsGenerator.maxConcurrentCalls` | Maximum number of active calls/passengers in the simulated building. | Use a finite population-like limit such as `600`. When the limit is reached, the generator pauses until passengers complete their trips. |
+| `callsGenerator.numberOfSimulationDays` | How many simulated days the random generator should run. | Use `1` or more. The generator stops when either this limit or `numberOfCalls` is reached. |
+| `callsGenerator.simulationDayDurationMs` | Duration of one simulated 24-hour traffic cycle. | The random generator repeats a daily profile with peaks in the morning, around lunch and around dinner. `120000` means a full day lasts 2 real minutes. |
 | `callsGenerator.minDelayBetweenCallsMs` | The shortest wait between two generated calls. | Time is expressed in milliseconds: `1000` means 1 second. This value must not be higher than `maxDelayBetweenCallsMs`. |
 | `callsGenerator.maxDelayBetweenCallsMs` | The longest wait between two generated calls. | Time is expressed in milliseconds. Increase it for a calmer simulation, decrease it for busier traffic. |
 | `elevator.timeToReachTheNextFloorMs` | How long an elevator takes to move from one floor to the next. | Time is expressed in milliseconds. Use a value greater than `0`; higher values make elevators slower. |
 | `elevator.enterAndExitTimeMs` | How long doors stay open while people enter and exit. | Time is expressed in milliseconds. Higher values make every stop last longer. |
-| `elevator.maxPeople` | Maximum number of people allowed in a cabin. | Full elevators are excluded from new assignments; cabins above 80% load are penalized. |
+| `elevator.maxPeople` | Maximum number of people allowed in a cabin. | The dispatcher considers both people already on board and calls already assigned to the cabin, so elevators are not overbooked beyond full load. Cabins above 80% load are penalized. |
 | `log.traceLevel` | How much detail is printed in the log. | Use `Debug` for the most detail, then `Verbose`, `Info`, `Warning`, or `Error` for progressively quieter output. |
 | `log.defaultLogType` | Where log messages are written. | Use `Screen` for console only, `File` for file only, or `ScreenAndFile`/`Both` for both outputs. |
 | `log.filePath` | File used when file logging is enabled. | Relative paths are resolved from the program working directory. The default is `elevator.log`. |
@@ -99,6 +102,9 @@ indicators in the final statistics.
 When the simulation stops, the dashboard is replaced by a full final report. This
 report is not limited by the normal rolling log window, so all configured elevators
 are shown.
+Long table values are wrapped onto continuation rows so recommendation reasons and
+other explanatory fields keep the report aligned instead of breaking the table
+layout.
 
 If file logging is enabled, the same final report is appended to the configured log
 file. This is useful when the screen report is long or when you want to compare
@@ -112,6 +118,7 @@ The first table summarizes passenger flow:
 | `Assigned calls` | Calls accepted by an elevator. |
 | `Boarded passengers` | Passengers who entered an elevator. |
 | `Completed passengers` | Passengers who reached their destination floor. |
+| `Simulation time` | Current simulated day and time of day when the report is printed. The same value is shown live in the symbolic interface. |
 | `Average wait` | Average time from call creation to passenger boarding, shown in seconds. |
 | `Max wait` | Longest observed waiting time, shown in seconds. |
 
@@ -121,6 +128,7 @@ The anomaly table highlights situations worth investigating:
 | --- | --- |
 | `Forced assignments` | Calls assigned even though the normal availability rules did not find an ideal cabin. |
 | `No available elevator` | Dispatch decisions where all cabins were busy, full, out of direction or otherwise not directly available. |
+| `Capacity limit waits` | Dispatch attempts that had to wait because every cabin had already reached its configured committed load. |
 | `Pending boarding` | Calls still waiting when the simulation was stopped. |
 | `Pending completion` | Passengers still inside elevators when the simulation was stopped. |
 | `Avg assignment time` | Average time spent by the dispatch algorithm to assign a call. |
@@ -162,6 +170,17 @@ The report also includes a fleet sizing recommendation:
 The recommendation is conservative: it suggests adding elevators when waits,
 backlog or fallback rates indicate pressure; it suggests reducing only when service
 is comfortable and at least one elevator did no useful work.
+
+The report also includes a cabin sizing recommendation:
+
+| Parameter | Meaning |
+| --- | --- |
+| `Configured max people` | Current cabin capacity from `elevator.maxPeople`. |
+| `Recommended max people` | Suggested number of people each cabin should carry for the observed load. |
+| `Sizing reason` | Short explanation of the recommendation. |
+| `Peak people on board` | Highest observed number of passengers physically inside a cabin. |
+| `Peak committed load` | Highest observed cabin load including both people on board and people assigned but not boarded yet. |
+| `Capacity limit waits` | Number of times dispatch had to wait because all cabins were at the configured committed load. |
 
 Possible future improvements:
 - Unit and integration tests

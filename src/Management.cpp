@@ -14,8 +14,10 @@
 #include <chrono>
 #include <cmath>
 #include <iomanip>
+#include <initializer_list>
 #include <limits>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -25,6 +27,8 @@ namespace
     Elevator* elevator{ nullptr };
     double score{ std::numeric_limits<double>::max() };
     bool available{ false };
+    bool capacityLimited{ false };
+    std::size_t committedLoad{ 0U };
   };
 
   bool IsMoving(const ElevatorStatus status)
@@ -102,10 +106,14 @@ namespace
       return candidate;
 
     const auto maxPeople = Configuration::Elevator::MaxPeople();
-    const auto peopleCount = elevator.GetPeopleCount();
-    const auto loadRatio = static_cast<double>(peopleCount) / static_cast<double>(maxPeople);
+    const auto committedLoad = elevator.GetCommittedPeopleCount();
+    candidate.committedLoad = committedLoad;
+    candidate.capacityLimited = committedLoad >= maxPeople;
+    Statistics::RecordCommittedElevatorLoad(committedLoad);
 
-    if (peopleCount >= maxPeople)
+    const auto loadRatio = static_cast<double>(committedLoad) / static_cast<double>(maxPeople);
+
+    if (candidate.capacityLimited)
       return candidate;
 
     const auto currentDirection = elevator.GetDirection();
@@ -150,6 +158,80 @@ namespace
   std::string Separator(const std::size_t width)
   {
     return std::string(width, '-');
+  }
+
+  std::size_t TableWidth(const std::initializer_list<std::size_t> columnWidths)
+  {
+    std::size_t width = 1U;
+    for (const auto columnWidth : columnWidths)
+      width += columnWidth + 3U;
+
+    return width;
+  }
+
+  std::vector<std::string> WrapCell(const std::string& value, const std::size_t width)
+  {
+    std::vector<std::string> lines;
+    std::string remaining = value;
+
+    while (remaining.size() > width)
+    {
+      auto splitPosition = remaining.rfind(' ', width);
+      if (splitPosition == std::string::npos || splitPosition == 0U)
+        splitPosition = width;
+
+      lines.push_back(remaining.substr(0U, splitPosition));
+
+      const auto nextPosition = remaining.find_first_not_of(' ', splitPosition);
+      remaining = nextPosition == std::string::npos ? "" : remaining.substr(nextPosition);
+    }
+
+    lines.push_back(remaining);
+    return lines;
+  }
+
+  void AddTableRow(
+    std::vector<std::string>& report,
+    const std::vector<std::string>& cells,
+    const std::vector<std::size_t>& widths,
+    const std::vector<bool>& rightAlign)
+  {
+    std::vector<std::vector<std::string>> wrappedCells;
+    wrappedCells.reserve(cells.size());
+
+    std::size_t rowHeight = 1U;
+    for (std::size_t index = 0U; index < cells.size(); ++index)
+    {
+      wrappedCells.push_back(WrapCell(cells[index], widths[index]));
+      rowHeight = std::max(rowHeight, wrappedCells.back().size());
+    }
+
+    for (std::size_t lineIndex = 0U; lineIndex < rowHeight; ++lineIndex)
+    {
+      std::stringstream row;
+      row << "|";
+
+      for (std::size_t cellIndex = 0U; cellIndex < cells.size(); ++cellIndex)
+      {
+        const auto cellLine =
+          lineIndex < wrappedCells[cellIndex].size() ? wrappedCells[cellIndex][lineIndex] : "";
+
+        row << " ";
+        if (rightAlign[cellIndex])
+          row << std::right;
+        else
+          row << std::left;
+
+        row << std::setw(static_cast<int>(widths[cellIndex])) << cellLine << " |";
+      }
+
+      report.push_back(row.str());
+    }
+  }
+
+  void AddSeparator(std::vector<std::string>& report, const std::initializer_list<std::size_t> columnWidths)
+  {
+    report.push_back(Separator(TableWidth(columnWidths)));
   }
 
   std::string FormatSeconds(const double milliseconds)
@@ -215,6 +297,44 @@ namespace
     double noAvailableRatio{ 0.0 };
     std::uint64_t unassignedElevators{ 0U };
   };
+
+  struct CabinSizingRecommendation
+  {
+    unsigned int recommendedMaxPeople{ 1U };
+    std::string signal;
+    std::string reason;
+  };
+
+  CabinSizingRecommendation BuildCabinSizingRecommendation(const StatisticsSnapshot& statistics)
+  {
+    CabinSizingRecommendation recommendation;
+    const auto configuredMaxPeople = Configuration::Elevator::MaxPeople();
+    const auto observedPeak = std::max(statistics.maxCabinPeople, statistics.maxCommittedElevatorLoad);
+
+    recommendation.recommendedMaxPeople = std::max(1U, configuredMaxPeople);
+
+    if (statistics.capacityLimitedDecisions > 0U)
+    {
+      recommendation.recommendedMaxPeople = std::max<unsigned int>(
+        configuredMaxPeople + 1U,
+        static_cast<unsigned int>(observedPeak + 1U));
+      recommendation.signal = "Increase";
+      recommendation.reason = "cabins reached full load";
+    }
+    else if (observedPeak > 0U && observedPeak < configuredMaxPeople * 0.5 && configuredMaxPeople > 1U)
+    {
+      recommendation.recommendedMaxPeople = std::max<unsigned int>(1U, static_cast<unsigned int>(observedPeak + 1U));
+      recommendation.signal = "Can reduce";
+      recommendation.reason = "observed load stayed low";
+    }
+    else
+    {
+      recommendation.signal = "Keep";
+      recommendation.reason = "cabin capacity looks balanced";
+    }
+
+    return recommendation;
+  }
 
   FleetSizingRecommendation BuildFleetSizingRecommendation(
     const StatisticsSnapshot& statistics,
@@ -342,6 +462,7 @@ bool Management::AssignCall(const std::shared_ptr<Call>& call)
     m_log.Trace(message);
 
     call->SetAssignedElevator(elevator->GetId());
+    Statistics::RecordCommittedElevatorLoad(elevator->GetCommittedPeopleCount());
     const auto answered = elevator->AnswerToCall(call);
 
     if (answered)
@@ -353,11 +474,25 @@ bool Management::AssignCall(const std::shared_ptr<Call>& call)
   std::vector<AssignmentCandidate> candidates;
   candidates.reserve(m_elevators.size());
 
-  for (auto& elevator : m_elevators)
-    candidates.push_back(EvaluateElevator(*elevator, call));
+  do
+  {
+    candidates.clear();
 
-  std::sort(candidates.begin(), candidates.end(),
-    [](const AssignmentCandidate& a, const AssignmentCandidate& b) { return a.score < b.score; });
+    for (auto& elevator : m_elevators)
+      candidates.push_back(EvaluateElevator(*elevator, call));
+
+    std::sort(candidates.begin(), candidates.end(),
+      [](const AssignmentCandidate& a, const AssignmentCandidate& b) { return a.score < b.score; });
+
+    const auto allCandidatesCapacityLimited = std::all_of(candidates.begin(), candidates.end(),
+      [](const AssignmentCandidate& candidate) { return candidate.capacityLimited; });
+
+    if (!allCandidatesCapacityLimited)
+      break;
+
+    Statistics::RecordCapacityLimitedDecision();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  } while (true);
 
   // Availability is stricter than scoring. The metric helps detect moments where
   // the dispatcher had to fall back because every ideal candidate was busy/full.
@@ -397,33 +532,30 @@ void Management::TraceStatistics()
   // Build the final report as a complete buffer and render it outside the rolling
   // log window, otherwise long tables can be truncated by the normal 15-line log.
   report.push_back("Simulation statistics");
-  report.push_back(Separator(46));
-  report.push_back("| Metric                 | Value             |");
-  report.push_back(Separator(46));
+  AddSeparator(report, { 22U, 17U });
+  AddTableRow(report, { "Metric", "Value" }, { 22U, 17U }, { false, false });
+  AddSeparator(report, { 22U, 17U });
 
   const auto addGlobalStat = [&report](const std::string& metric, const std::string& value)
   {
-    std::stringstream row;
-    row << "| " << std::left << std::setw(22) << metric
-        << " | " << std::right << std::setw(17) << value
-        << " |";
-    report.push_back(row.str());
+    AddTableRow(report, { metric, value }, { 22U, 17U }, { false, true });
   };
 
   addGlobalStat("Queued calls", std::to_string(statistics.queuedCalls));
   addGlobalStat("Assigned calls", std::to_string(statistics.assignedCalls));
   addGlobalStat("Boarded passengers", std::to_string(statistics.boardedPassengers));
   addGlobalStat("Completed passengers", std::to_string(statistics.completedPassengers));
+  addGlobalStat("Simulation time", Configuration::Simulation::CurrentDayTimeLabel());
   addGlobalStat("Average wait", FormatSeconds(statistics.AverageWaitTimeMs()));
   addGlobalStat("Max wait", FormatSeconds(static_cast<double>(statistics.maxWaitTimeMs)));
 
-  report.push_back(Separator(46));
+  AddSeparator(report, { 22U, 17U });
   report.push_back("");
 
   report.push_back("Algorithm anomaly indicators");
-  report.push_back(Separator(84));
-  report.push_back("| Indicator                     | Value             | Level | Notes              |");
-  report.push_back(Separator(84));
+  AddSeparator(report, { 29U, 17U, 5U, 18U });
+  AddTableRow(report, { "Indicator", "Value", "Level", "Notes" }, { 29U, 17U, 5U, 18U }, { false, false, false, false });
+  AddSeparator(report, { 29U, 17U, 5U, 18U });
 
   const auto addIndicator = [&report](
     const std::string& indicator,
@@ -431,13 +563,7 @@ void Management::TraceStatistics()
     const std::string& level,
     const std::string& notes)
   {
-    std::stringstream row;
-    row << "| " << std::left << std::setw(29) << indicator
-        << " | " << std::right << std::setw(17) << value
-        << " | " << std::left << std::setw(5) << level
-        << " | " << std::setw(18) << notes
-        << " |";
-    report.push_back(row.str());
+    AddTableRow(report, { indicator, value, level, notes }, { 29U, 17U, 5U, 18U }, { false, true, false, false });
   };
 
   const auto pendingBoarding =
@@ -447,6 +573,7 @@ void Management::TraceStatistics()
   const auto maxWaitRatio =
     statistics.AverageWaitTimeMs() <= 0.0 ? 0.0 : static_cast<double>(statistics.maxWaitTimeMs) / statistics.AverageWaitTimeMs();
   const auto fleetSizing = BuildFleetSizingRecommendation(statistics, m_elevators, pendingBoarding);
+  const auto cabinSizing = BuildCabinSizingRecommendation(statistics);
 
   // These indicators are intentionally heuristic. They are meant to point the
   // operator toward suspicious behavior, not to prove that the dispatch is wrong.
@@ -461,6 +588,12 @@ void Management::TraceStatistics()
     std::to_string(statistics.noAvailableElevatorDecisions),
     statistics.noAvailableElevatorDecisions == 0U ? "OK" : "WARN",
     "fallback used");
+
+  addIndicator(
+    "Capacity limit waits",
+    std::to_string(statistics.capacityLimitedDecisions),
+    statistics.capacityLimitedDecisions == 0U ? "OK" : "WARN",
+    "full cabins");
 
   addIndicator(
     "Pending boarding",
@@ -492,25 +625,20 @@ void Management::TraceStatistics()
     maxWaitRatio <= 2.5 ? "OK" : "WARN",
     "tail latency");
 
-  report.push_back(Separator(84));
+  AddSeparator(report, { 29U, 17U, 5U, 18U });
   report.push_back("");
 
   report.push_back("Fleet sizing recommendation");
-  report.push_back(Separator(80));
-  report.push_back("| Parameter                     | Value             | Notes              |");
-  report.push_back(Separator(80));
+  AddSeparator(report, { 29U, 20U, 18U });
+  AddTableRow(report, { "Parameter", "Value", "Notes" }, { 29U, 20U, 18U }, { false, false, false });
+  AddSeparator(report, { 29U, 20U, 18U });
 
   const auto addSizingParameter = [&report](
     const std::string& parameter,
     const std::string& value,
     const std::string& notes)
   {
-    std::stringstream row;
-    row << "| " << std::left << std::setw(29) << parameter
-        << " | " << std::right << std::setw(17) << value
-        << " | " << std::left << std::setw(18) << notes
-        << " |";
-    report.push_back(row.str());
+    AddTableRow(report, { parameter, value, notes }, { 29U, 20U, 18U }, { false, true, false });
   };
 
   addSizingParameter("Configured elevators", std::to_string(Configuration::Building::NumberOfElevators()), "config input");
@@ -522,7 +650,22 @@ void Management::TraceStatistics()
   addSizingParameter("No-available rate", FormatPercent(fleetSizing.noAvailableRatio), "saturation");
   addSizingParameter("Unassigned elevators", std::to_string(fleetSizing.unassignedElevators), "possible spare");
 
-  report.push_back(Separator(80));
+  AddSeparator(report, { 29U, 20U, 18U });
+  report.push_back("");
+
+  report.push_back("Cabin sizing recommendation");
+  AddSeparator(report, { 29U, 20U, 18U });
+  AddTableRow(report, { "Parameter", "Value", "Notes" }, { 29U, 20U, 18U }, { false, false, false });
+  AddSeparator(report, { 29U, 20U, 18U });
+
+  addSizingParameter("Configured max people", std::to_string(Configuration::Elevator::MaxPeople()), "config input");
+  addSizingParameter("Recommended max people", std::to_string(cabinSizing.recommendedMaxPeople), cabinSizing.signal);
+  addSizingParameter("Sizing reason", cabinSizing.reason, "heuristic");
+  addSizingParameter("Peak people on board", std::to_string(statistics.maxCabinPeople), "observed");
+  addSizingParameter("Peak committed load", std::to_string(statistics.maxCommittedElevatorLoad), "assigned+boarded");
+  addSizingParameter("Capacity limit waits", std::to_string(statistics.capacityLimitedDecisions), "pressure");
+
+  AddSeparator(report, { 29U, 20U, 18U });
   report.push_back("");
 
   report.push_back("Elevator statistics");

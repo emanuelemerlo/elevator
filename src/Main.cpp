@@ -26,6 +26,7 @@ int main()
   try
   {
     Statistics::Reset();
+    Configuration::Simulation::StartClock();
 
     Management elevatorsManagement(Configuration::Building::NumberOfElevators());
 
@@ -36,7 +37,7 @@ int main()
     switch (Configuration::CallsGenerator::GeneratorType())
     {
     case Configuration::CallsGenerator::Type::Random:
-      callsGenerator.StartRandom(Configuration::CallsGenerator::NumberOfCalls());
+      callsGenerator.StartRandom(/*Configuration::CallsGenerator::NumberOfCalls()*/);
       break;
     case Configuration::CallsGenerator::Type::Fixed:
     default:

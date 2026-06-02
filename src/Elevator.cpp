@@ -264,7 +264,7 @@ bool Elevator::Available(const std::shared_ptr<Call>& call) const
   if (m_status.load() == ElevatorStatus::OutOfOrder)
     return false;
 
-  if (m_people.Count() >= Configuration::Elevator::MaxPeople())
+  if (GetCommittedPeopleCount() >= Configuration::Elevator::MaxPeople())
     return false;
 
   if (m_status.load() == ElevatorStatus::Idle || m_currentDirection.load() == Direction::None)
@@ -282,7 +282,10 @@ bool Elevator::Available(const std::shared_ptr<Call>& call) const
   return false;
 }
 
-
+std::size_t Elevator::GetCommittedPeopleCount() const
+{
+  return m_people.Count() + Floors::GetPeople().CountByAssignedElevator(m_elevatorId);
+}
 
 ElevatorSnapshot Elevator::GetSnapshot() const
 {
