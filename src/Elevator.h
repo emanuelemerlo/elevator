@@ -74,6 +74,7 @@ public:
   Direction GetDirection() const { return m_currentDirection.load(); }
   ElevatorSnapshot GetSnapshot() const;
   std::size_t GetPeopleCount() const { return m_people.Count(); }
+  std::size_t GetCommittedPeopleCount() const;
   std::size_t GetQueuedStopsCount() const { return m_floors.CountStops(); }
   std::size_t GetQueuedStopsBetween(Floors::FloorNumber firstFloor, Floors::FloorNumber lastFloor) const
     { return m_floors.CountStopsBetween(firstFloor, lastFloor); }

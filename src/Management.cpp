@@ -16,6 +16,7 @@
 #include <iomanip>
 #include <limits>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -25,6 +26,8 @@ namespace
     Elevator* elevator{ nullptr };
     double score{ std::numeric_limits<double>::max() };
     bool available{ false };
+    bool capacityLimited{ false };
+    std::size_t committedLoad{ 0U };
   };
 
   bool IsMoving(const ElevatorStatus status)
@@ -102,10 +105,14 @@ namespace
       return candidate;
 
     const auto maxPeople = Configuration::Elevator::MaxPeople();
-    const auto peopleCount = elevator.GetPeopleCount();
-    const auto loadRatio = static_cast<double>(peopleCount) / static_cast<double>(maxPeople);
+    const auto committedLoad = elevator.GetCommittedPeopleCount();
+    candidate.committedLoad = committedLoad;
+    candidate.capacityLimited = committedLoad >= maxPeople;
+    Statistics::RecordCommittedElevatorLoad(committedLoad);
 
-    if (peopleCount >= maxPeople)
+    const auto loadRatio = static_cast<double>(committedLoad) / static_cast<double>(maxPeople);
+
+    if (candidate.capacityLimited)
       return candidate;
 
     const auto currentDirection = elevator.GetDirection();
@@ -215,6 +222,44 @@ namespace
     double noAvailableRatio{ 0.0 };
     std::uint64_t unassignedElevators{ 0U };
   };
+
+  struct CabinSizingRecommendation
+  {
+    unsigned int recommendedMaxPeople{ 1U };
+    std::string signal;
+    std::string reason;
+  };
+
+  CabinSizingRecommendation BuildCabinSizingRecommendation(const StatisticsSnapshot& statistics)
+  {
+    CabinSizingRecommendation recommendation;
+    const auto configuredMaxPeople = Configuration::Elevator::MaxPeople();
+    const auto observedPeak = std::max(statistics.maxCabinPeople, statistics.maxCommittedElevatorLoad);
+
+    recommendation.recommendedMaxPeople = std::max(1U, configuredMaxPeople);
+
+    if (statistics.capacityLimitedDecisions > 0U)
+    {
+      recommendation.recommendedMaxPeople = std::max<unsigned int>(
+        configuredMaxPeople + 1U,
+        static_cast<unsigned int>(observedPeak + 1U));
+      recommendation.signal = "Increase";
+      recommendation.reason = "cabins reached full load";
+    }
+    else if (observedPeak > 0U && observedPeak < configuredMaxPeople * 0.5 && configuredMaxPeople > 1U)
+    {
+      recommendation.recommendedMaxPeople = std::max<unsigned int>(1U, static_cast<unsigned int>(observedPeak + 1U));
+      recommendation.signal = "Can reduce";
+      recommendation.reason = "observed load stayed low";
+    }
+    else
+    {
+      recommendation.signal = "Keep";
+      recommendation.reason = "cabin capacity looks balanced";
+    }
+
+    return recommendation;
+  }
 
   FleetSizingRecommendation BuildFleetSizingRecommendation(
     const StatisticsSnapshot& statistics,
@@ -342,6 +387,7 @@ bool Management::AssignCall(const std::shared_ptr<Call>& call)
     m_log.Trace(message);
 
     call->SetAssignedElevator(elevator->GetId());
+    Statistics::RecordCommittedElevatorLoad(elevator->GetCommittedPeopleCount());
     const auto answered = elevator->AnswerToCall(call);
 
     if (answered)
@@ -353,11 +399,25 @@ bool Management::AssignCall(const std::shared_ptr<Call>& call)
   std::vector<AssignmentCandidate> candidates;
   candidates.reserve(m_elevators.size());
 
-  for (auto& elevator : m_elevators)
-    candidates.push_back(EvaluateElevator(*elevator, call));
+  do
+  {
+    candidates.clear();
 
-  std::sort(candidates.begin(), candidates.end(),
-    [](const AssignmentCandidate& a, const AssignmentCandidate& b) { return a.score < b.score; });
+    for (auto& elevator : m_elevators)
+      candidates.push_back(EvaluateElevator(*elevator, call));
+
+    std::sort(candidates.begin(), candidates.end(),
+      [](const AssignmentCandidate& a, const AssignmentCandidate& b) { return a.score < b.score; });
+
+    const auto allCandidatesCapacityLimited = std::all_of(candidates.begin(), candidates.end(),
+      [](const AssignmentCandidate& candidate) { return candidate.capacityLimited; });
+
+    if (!allCandidatesCapacityLimited)
+      break;
+
+    Statistics::RecordCapacityLimitedDecision();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  } while (true);
 
   // Availability is stricter than scoring. The metric helps detect moments where
   // the dispatcher had to fall back because every ideal candidate was busy/full.
@@ -447,6 +507,7 @@ void Management::TraceStatistics()
   const auto maxWaitRatio =
     statistics.AverageWaitTimeMs() <= 0.0 ? 0.0 : static_cast<double>(statistics.maxWaitTimeMs) / statistics.AverageWaitTimeMs();
   const auto fleetSizing = BuildFleetSizingRecommendation(statistics, m_elevators, pendingBoarding);
+  const auto cabinSizing = BuildCabinSizingRecommendation(statistics);
 
   // These indicators are intentionally heuristic. They are meant to point the
   // operator toward suspicious behavior, not to prove that the dispatch is wrong.
@@ -461,6 +522,12 @@ void Management::TraceStatistics()
     std::to_string(statistics.noAvailableElevatorDecisions),
     statistics.noAvailableElevatorDecisions == 0U ? "OK" : "WARN",
     "fallback used");
+
+  addIndicator(
+    "Capacity limit waits",
+    std::to_string(statistics.capacityLimitedDecisions),
+    statistics.capacityLimitedDecisions == 0U ? "OK" : "WARN",
+    "full cabins");
 
   addIndicator(
     "Pending boarding",
@@ -521,6 +588,21 @@ void Management::TraceStatistics()
   addSizingParameter("Forced assignment rate", FormatPercent(fleetSizing.forcedAssignmentRatio), "pressure");
   addSizingParameter("No-available rate", FormatPercent(fleetSizing.noAvailableRatio), "saturation");
   addSizingParameter("Unassigned elevators", std::to_string(fleetSizing.unassignedElevators), "possible spare");
+
+  report.push_back(Separator(80));
+  report.push_back("");
+
+  report.push_back("Cabin sizing recommendation");
+  report.push_back(Separator(80));
+  report.push_back("| Parameter                     | Value             | Notes              |");
+  report.push_back(Separator(80));
+
+  addSizingParameter("Configured max people", std::to_string(Configuration::Elevator::MaxPeople()), "config input");
+  addSizingParameter("Recommended max people", std::to_string(cabinSizing.recommendedMaxPeople), cabinSizing.signal);
+  addSizingParameter("Sizing reason", cabinSizing.reason, "heuristic");
+  addSizingParameter("Peak people on board", std::to_string(statistics.maxCabinPeople), "observed");
+  addSizingParameter("Peak committed load", std::to_string(statistics.maxCommittedElevatorLoad), "assigned+boarded");
+  addSizingParameter("Capacity limit waits", std::to_string(statistics.capacityLimitedDecisions), "pressure");
 
   report.push_back(Separator(80));
   report.push_back("");

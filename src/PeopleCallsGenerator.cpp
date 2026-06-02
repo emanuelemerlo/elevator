@@ -6,12 +6,15 @@
 #include "People.h"
 #include "Watchdog.h"
 #include "Configuration.h"
+#include "Statistics.h"
 
 #include <random>
 #include <chrono>
 #include <future>
 #include <memory>
 #include <functional>
+#include <algorithm>
+#include <cmath>
 
 using namespace std::chrono_literals;
 
@@ -23,6 +26,50 @@ PeopleCallsGenerator::PeopleCallsGenerator(Management& management) : m_managemen
 PeopleCallsGenerator::~PeopleCallsGenerator()
 {
   Shutdown();
+}
+
+namespace
+{
+  double DailyTrafficIntensity(const double hour)
+  {
+    const auto peak = [hour](const double center, const double width, const double weight)
+    {
+      const auto distance = hour - center;
+      return weight * std::exp(-(distance * distance) / (2.0 * width * width));
+    };
+
+    const auto morning = peak(8.25, 1.25, 1.00);
+    const auto lunch = peak(12.50, 1.00, 0.70);
+    const auto dinner = peak(19.00, 1.35, 0.75);
+    return std::clamp(0.25 + morning + lunch + dinner, 0.25, 1.0);
+  }
+
+  double SimulatedHour(const std::chrono::steady_clock::time_point startTime)
+  {
+    const auto dayDurationMs = static_cast<double>(Configuration::CallsGenerator::SimulationDayDuration());
+    const auto elapsedMs = static_cast<double>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime).count());
+
+    return std::fmod(elapsedMs, dayDurationMs) / dayDurationMs * 24.0;
+  }
+
+  std::chrono::milliseconds ScaleDelayForDailyProfile(
+    const long long baseDelayMs,
+    const std::chrono::steady_clock::time_point startTime)
+  {
+    const auto intensity = DailyTrafficIntensity(SimulatedHour(startTime));
+    const auto scaledDelayMs = static_cast<long long>(static_cast<double>(baseDelayMs) / intensity);
+    return std::chrono::milliseconds(std::max<long long>(1LL, scaledDelayMs));
+  }
+
+  bool MaxConcurrentCallsReached()
+  {
+    const auto statistics = Statistics::GetSnapshot();
+    const auto activeCalls =
+      statistics.queuedCalls > statistics.completedPassengers ? statistics.queuedCalls - statistics.completedPassengers : 0U;
+
+    return activeCalls >= Configuration::CallsGenerator::MaxConcurrentCalls();
+  }
 }
 
 void PeopleCallsGenerator::StartRandom(const unsigned int numberOfCalls)
@@ -67,6 +114,7 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
 
   const auto seed = static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch().count());
   std::default_random_engine generator(seed);
+  const auto generationStartTime = std::chrono::steady_clock::now();
 
   const std::uniform_int_distribution<Floors::FloorNumber> randomFloor(Floors::BottomFloor, Floors::TopFloor());
   const std::uniform_int_distribution<long long> randomDelay(
@@ -75,6 +123,14 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
 
   do
   {
+    if (MaxConcurrentCallsReached())
+    {
+      std::this_thread::sleep_for(ScaleDelayForDailyProfile(
+        Configuration::CallsGenerator::MaxDelayBetweenCalls(),
+        generationStartTime));
+      continue;
+    }
+
     std::shared_ptr<Call> call;
 
     do
@@ -100,7 +156,7 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
       break;
 
     auto getDelay = std::bind(randomDelay, std::ref(generator));
-    std::this_thread::sleep_for(std::chrono::milliseconds(getDelay()));
+    std::this_thread::sleep_for(ScaleDelayForDailyProfile(getDelay(), generationStartTime));
 
   } while (!StopRequested());
 

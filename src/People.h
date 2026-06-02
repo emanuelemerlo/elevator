@@ -39,6 +39,7 @@ public:
 
   bool Empty();
   std::size_t Count() const;
+  std::size_t CountByAssignedElevator(const std::string& elevatorId) const;
   std::size_t CountByStartFloor(Floors::FloorNumber floor) const;
   std::vector<std::pair<std::string, std::size_t>> CountByStartFloorAndElevator(Floors::FloorNumber floor) const;
 

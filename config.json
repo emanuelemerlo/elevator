@@ -6,6 +6,8 @@
   "callsGenerator": {
     "type": "Random",
     "numberOfCalls": 50,
+    "maxConcurrentCalls": 600,
+    "simulationDayDurationMs": 120000,
     "minDelayBetweenCallsMs": 200,
     "maxDelayBetweenCallsMs": 400
   },

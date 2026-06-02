@@ -103,6 +103,12 @@ namespace
     if (settings.minDelayBetweenCalls > settings.maxDelayBetweenCalls)
       throw std::invalid_argument("callsGenerator.minDelayBetweenCallsMs must be <= maxDelayBetweenCallsMs");
 
+    if (settings.maxConcurrentCalls == 0)
+      throw std::invalid_argument("callsGenerator.maxConcurrentCalls must be greater than 0");
+
+    if (settings.simulationDayDuration.count() == 0)
+      throw std::invalid_argument("callsGenerator.simulationDayDurationMs must be greater than 0");
+
     if (settings.timeToReachTheNextFloor.count() == 0)
       throw std::invalid_argument("elevator.timeToReachTheNextFloorMs must be greater than 0");
 
@@ -132,6 +138,12 @@ bool Configuration::LoadFromFile(const std::string& path)
 
   if (FindUnsigned(json, "numberOfCalls", value))
     settings.numberOfCalls = value;
+
+  if (FindUnsigned(json, "maxConcurrentCalls", value))
+    settings.maxConcurrentCalls = value;
+
+  if (FindUnsigned(json, "simulationDayDurationMs", value))
+    settings.simulationDayDuration = std::chrono::milliseconds(value);
 
   if (FindUnsigned(json, "minDelayBetweenCallsMs", value))
     settings.minDelayBetweenCalls = std::chrono::milliseconds(value);
@@ -200,6 +212,16 @@ Configuration::CallsGenerator::Type Configuration::CallsGenerator::GeneratorType
 unsigned int Configuration::CallsGenerator::NumberOfCalls()
 {
   return Get().numberOfCalls;
+}
+
+unsigned int Configuration::CallsGenerator::MaxConcurrentCalls()
+{
+  return Get().maxConcurrentCalls;
+}
+
+long long Configuration::CallsGenerator::SimulationDayDuration()
+{
+  return Get().simulationDayDuration.count();
 }
 
 long long Configuration::CallsGenerator::MinDelayBetweenCalls()
