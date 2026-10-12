@@ -72,26 +72,44 @@ namespace
 
     const auto minDelayMs = Configuration::CallsGenerator::MinDelayBetweenCalls();
     const auto maxDelayMs = Configuration::CallsGenerator::MaxDelayBetweenCalls();
-    const auto boundedDelayMs = std::clamp(
-      static_cast<long long>(profiledDelayMs),
-      std::max(1LL, minDelayMs),
-      std::max(std::max(1LL, minDelayMs), maxDelayMs));
+
+    const long long lowerBound = std::max(1LL, minDelayMs);
+    const long long upperBound = std::max(lowerBound, maxDelayMs);
+
+    long long boundedDelayMs = static_cast<long long>(profiledDelayMs);
+    if (boundedDelayMs < lowerBound)
+      boundedDelayMs = lowerBound;
+    if (boundedDelayMs > upperBound)
+      boundedDelayMs = upperBound;
 
     return std::chrono::milliseconds(boundedDelayMs);
   }
 
   bool MaxConcurrentCallsReached()
   {
-    const auto statistics = Statistics::GetSnapshot();
-    const auto activeCalls =
-      statistics.queuedCalls > statistics.completedPassengers ? statistics.queuedCalls - statistics.completedPassengers : 0U;
+    return Statistics::ActiveCalls() >= Configuration::CallsGenerator::MaxConcurrentCalls();
+  }
 
-    return activeCalls >= Configuration::CallsGenerator::MaxConcurrentCalls();
+  // Delays are configured in simulated time: the time scale decides how long they last for real.
+  std::chrono::microseconds Real(const std::chrono::milliseconds simulatedDuration)
+  {
+    return Configuration::Simulation::ToRealDuration(simulatedDuration);
+  }
+
+  unsigned int GeneratorSeed()
+  {
+    const auto configuredSeed = Configuration::Simulation::RandomSeed();
+    if (configuredSeed != 0U)
+      return configuredSeed;
+
+    return static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch().count());
   }
 }
 
 void PeopleCallsGenerator::StartRandom()
 {
+  m_finished = false;
+
   if (m_generatorThread != nullptr && m_generatorThread->IsActive())
     m_generatorThread->Stop();
 
@@ -102,6 +120,8 @@ void PeopleCallsGenerator::StartRandom()
 
 void PeopleCallsGenerator::StartFixed()
 {
+  m_finished = false;
+
   if (m_generatorThread != nullptr && m_generatorThread->IsActive())
     m_generatorThread->Stop();
 
@@ -126,22 +146,39 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
   if (peopleCallsGenerator == nullptr || StopRequested())
     return;
 
-  std::this_thread::sleep_for(2s); // arbitrary delay before start
+  if (!SleepFor(Real(2s))) // arbitrary delay before start, interrupted by a stop request
+    return;
 
-  const auto seed = static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch().count());
+  // Same seed -> same sequence of calls (floors and delays); the seed is traced to reproduce a run.
+  const auto seed = GeneratorSeed();
+  peopleCallsGenerator->m_log.Trace("Random seed: " + std::to_string(seed), Log::TraceLevel::Info);
   std::default_random_engine generator(seed);
 
   const std::uniform_int_distribution<Floors::FloorNumber> randomFloor(Floors::BottomFloor, Floors::TopFloor());
   const std::uniform_real_distribution<double> randomJitter(0.75, 1.25);
 
+  const auto maxCalls = Configuration::CallsGenerator::NumberOfCalls();
+  unsigned int generatedCalls = 0U;
+
   do
   {
     if (Configuration::Simulation::Completed())
+    {
+      peopleCallsGenerator->m_log.Trace("Simulation days completed: generator stopped");
       break;
+    }
+
+    if (generatedCalls >= maxCalls)
+    {
+      peopleCallsGenerator->m_log.Trace("Configured number of calls reached: generator stopped");
+      break;
+    }
 
     if (MaxConcurrentCallsReached())
     {
-      std::this_thread::sleep_for(DelayForDailyProfile(1.0));
+      if (!SleepFor(Real(DelayForDailyProfile(1.0))))
+        break;
+
       continue;
     }
 
@@ -159,17 +196,19 @@ void PeopleCallsGenerator::RandomGeneratorThread::CycleFunction(PeopleCallsGener
 
     Floors::GetPeople().Insert(call);
 
-    // Async assign request
-    auto handle = std::async(std::launch::async, [peopleCallsGenerator, call]() { peopleCallsGenerator->m_management.AssignCall(call); });
-
-    // Synch assign request
-    //m_management.AssignCall(call);
+    // Assign call synchronously to avoid unbounded thread creation
+    peopleCallsGenerator->m_management.AssignCall(call);
+    ++generatedCalls;
 
     auto getJitter = std::bind(randomJitter, std::ref(generator));
-    std::this_thread::sleep_for(DelayForDailyProfile(getJitter()));
+
+    // Interruptible sleep: a shutdown request must not wait for the next call delay
+    if (!SleepFor(Real(DelayForDailyProfile(getJitter()))))
+      break;
 
   } while (!StopRequested());
 
+  peopleCallsGenerator->m_finished = true;
   peopleCallsGenerator->m_log.Trace("CycleFunction exit", ILog::TraceLevel::Debug);
 }
 
@@ -178,14 +217,14 @@ void PeopleCallsGenerator::FixedGeneratorThread::CycleFunction(PeopleCallsGenera
   if (peopleCallsGenerator == nullptr)
     return;
 
-  const auto seed = static_cast<unsigned int>(std::chrono::system_clock::now().time_since_epoch().count());
-  std::default_random_engine generator(seed);
+  std::default_random_engine generator(GeneratorSeed());
 
   const std::uniform_int_distribution<long long> randomDelay(
     Configuration::CallsGenerator::MinDelayBetweenCalls(),
     Configuration::CallsGenerator::MaxDelayBetweenCalls());
 
-  std::this_thread::sleep_for(2s); // arbitrary delay before start
+  if (!SleepFor(Real(2s))) // arbitrary delay before start, interrupted by a stop request
+    return;
 
   const auto topFloor = Floors::TopFloor();
   const auto bottomFloor = Floors::BottomFloor;
@@ -218,6 +257,9 @@ void PeopleCallsGenerator::FixedGeneratorThread::CycleFunction(PeopleCallsGenera
 
   for (const auto& call : calls)
   {
+    if (StopRequested())
+      break;
+
     if (!call->IsValid())
       continue;
 
@@ -225,14 +267,16 @@ void PeopleCallsGenerator::FixedGeneratorThread::CycleFunction(PeopleCallsGenera
 
     Floors::GetPeople().Insert(call);
 
-    // Async assign request
-    auto handle = std::async(std::launch::async, [peopleCallsGenerator, call]() { peopleCallsGenerator->m_management.AssignCall(call); });
-
-    // Synch assign request
-    //m_management.AssignCall(call);
+    // Assign call synchronously
+    peopleCallsGenerator->m_management.AssignCall(call);
 
     auto getDelay = std::bind(randomDelay, std::ref(generator));
-    std::this_thread::sleep_for(std::chrono::milliseconds(getDelay()));
+
+    // Interruptible sleep: a shutdown request must not wait for the remaining calls
+    if (!SleepFor(Real(std::chrono::milliseconds(getDelay()))))
+      break;
   }
+
+  peopleCallsGenerator->m_finished = true;
 }
 

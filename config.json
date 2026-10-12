@@ -1,25 +1,22 @@
 {
-  "building": {
-    "numberOfElevators": 5,
-    "numberOfFloors": 10
-  },
-  "callsGenerator": {
-    "type": "Random",
-    "numberOfCalls": 50,
-    "maxConcurrentCalls": 600,
-    "numberOfSimulationDays": 2,
-    "simulationDayDurationMs": 60000,
-    "minDelayBetweenCallsMs": 200,
-    "maxDelayBetweenCallsMs": 400
-  },
-  "elevator": {
-    "timeToReachTheNextFloorMs": 500,
-    "enterAndExitTimeMs": 200,
-    "maxPeople": 8
-  },
-  "log": {
-    "traceLevel": "Info",
-    "defaultLogType": "Screen",
-    "filePath": "elevator.log"
-  }
+  "numberOfElevators": 4,
+  "numberOfFloors": 8,
+  "type": "Random",
+  "numberOfCalls": 320,
+  "averageCallsPerDay": 40,
+  "maxConcurrentCalls": 200,
+  "numberOfSimulationDays": 4,
+  "simulationDayDurationMs": 60000,
+  "minDelayBetweenCallsMs": 200,
+  "maxDelayBetweenCallsMs": 600,
+  "timeToReachTheNextFloorMs": 200,
+  "enterAndExitTimeMs": 20,
+  "doorTransitionTimeMs": 1000,
+  "maxPeople": 12,
+  "timeScale": 1.0,
+  "randomSeed": 0,
+  "autoStop": true,
+  "traceLevel": "Info",
+  "defaultLogType": "Screen",
+  "filePath": "elevator.log"
 }

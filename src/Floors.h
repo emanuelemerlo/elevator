@@ -36,11 +36,19 @@ public: // Types, constants and static functions
     static FloorNumber TopFloor();
     static bool IsValid(FloorNumber floorNumber);
 
+    // Pure next-stop rule (directional LOOK/SCAN) used by the real cabins and by the dispatcher
+    // simulation, so that the predicted route is by construction the route the cabin will follow.
+    // 'currentDirection' is updated when the sweep has to be reversed.
+    static FloorNumber FindNextStop(const FloorStops& stops, FloorNumber currentFloor, Direction& currentDirection);
+
 public:
   Floors();
 
 public:
   bool SetStop(const class std::shared_ptr<class Call>& call, bool destinationOnly = false);
+  // Flags only the pickup floor: the destination is flagged when the passenger boards, so that the
+  // cabin never makes an empty stop at a destination floor before the passenger is on board.
+  bool SetPickupStop(const class std::shared_ptr<class Call>& call);
   void ClearStop(const FloorNumber floor, const Direction direction);
 
   FloorNumber GetNextStop(const FloorNumber currentFloor, Direction& currentDirection);
@@ -55,7 +63,7 @@ public:
   std::string GetId() const { return m_log.GetTraceId(); }
 
 private:
-  FloorNumber Search(const FloorNumber startFloor, const Direction direction);
+  static FloorNumber Search(const FloorStops& stops, const FloorNumber startFloor, const Direction direction);
 
 private:
   FloorStops m_stops;

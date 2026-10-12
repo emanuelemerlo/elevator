@@ -10,6 +10,9 @@
 #include "Log.h"
 #include "WorkerThread.h"
 
+#include <atomic>
+#include <memory>
+
 class PeopleCallsGenerator final 
 {
 private:
@@ -51,10 +54,15 @@ public:
 
   void Shutdown();
 
+  // True when the generator has produced every call it had to produce (or has been stopped).
+  bool Finished() const { return m_finished; }
+
 private:
   class Management& m_management;
 
   Log m_log;
+
+  std::atomic_bool m_finished{ false };
 
   std::unique_ptr<WorkerThread<PeopleCallsGenerator>> m_generatorThread;
 };

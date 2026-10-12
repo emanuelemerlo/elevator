@@ -12,6 +12,9 @@
 #include <chrono>
 #include <string>
 #include <atomic>
+#include <functional>
+#include <memory>
+#include <vector>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -45,6 +48,18 @@ struct ElevatorSnapshot
   std::size_t peopleCount;
 };
 
+// Consistent view of a cabin used by the dispatcher to predict its route.
+struct ElevatorDispatchState
+{
+  Floors::FloorNumber floor{ 0U };
+  Direction direction{ Direction::None };
+  ElevatorStatus status{ ElevatorStatus::Idle };
+  bool doorsOpen{ false };
+  // Floor the cabin has already decided to go to (doors closing or moving), InvalidFloor if it is at a stop or idle.
+  Floors::FloorNumber targetFloor{ Floors::InvalidFloor };
+  std::vector<std::shared_ptr<Call>> onboard;
+};
+
 class Elevator final
 {
 public:
@@ -59,9 +74,12 @@ public:
   Elevator& operator=(Elevator&& other) noexcept = delete;
 
 public:
-  bool Available(const std::shared_ptr<Call>& call) const;
   bool AnswerToCall(const std::shared_ptr<Call>& call);
 
+  // Two-phase shutdown: RequestShutdown() only asks the elevator thread to stop (non blocking),
+  // ShutDown() requests it (if needed) and waits for the thread. Requesting shutdown on every
+  // elevator first makes them stop in parallel instead of one after the other.
+  void RequestShutdown();
   void ShutDown();
 
   void SetId(std::string id);
@@ -73,6 +91,13 @@ public:
   ElevatorStatus GetStatus() const { return m_status.load(); }
   Direction GetDirection() const { return m_currentDirection.load(); }
   ElevatorSnapshot GetSnapshot() const;
+  ElevatorDispatchState GetDispatchState() const;
+
+  // Called (from the cabin thread, with no lock held) when a passenger could not board because the cabin
+  // was full: the dispatcher must assign the call again.
+  void SetRefusedCallHandler(std::function<void(const std::shared_ptr<Call>&)> handler) { m_refusedCallHandler = std::move(handler); }
+  // Called (from the cabin thread) when passengers have left the cabin, i.e. when capacity may have been freed.
+  void SetCapacityFreedHandler(std::function<void()> handler) { m_capacityFreedHandler = std::move(handler); }
   std::size_t GetPeopleCount() const { return m_people.Count(); }
   std::size_t GetCommittedPeopleCount() const;
   std::size_t GetQueuedStopsCount() const { return m_floors.CountStops(); }
@@ -104,11 +129,15 @@ private:
   std::atomic<ElevatorStatus> m_status{ ElevatorStatus::Idle };
   std::atomic<Direction> m_currentDirection{ Direction::None };
   std::atomic<Direction> m_displayDirection{ Direction::None };
+  std::atomic<Floors::FloorNumber> m_targetFloor{ Floors::InvalidFloor };
 
   std::atomic<DoorsStatus> m_doorsStatus{ DoorsStatus::Closed };
 
+  // m_callPending is the wake-up predicate of m_go: it is written under m_goMutex so that a
+  // call assigned while the thread is busy (or not yet waiting) is never lost.
   std::condition_variable m_go;
   std::mutex m_goMutex;
+  bool m_callPending{ false };
 
   std::string m_elevatorId = "?";
   std::string m_name;
@@ -120,6 +149,9 @@ private:
   std::atomic<std::uint64_t> m_totalFloorsTravelled{ 0U };
   std::atomic<std::uint64_t> m_runCounter{ 0U };
   std::atomic<std::uint64_t> m_doorCycles{ 0U };
+
+  std::function<void(const std::shared_ptr<Call>&)> m_refusedCallHandler;
+  std::function<void()> m_capacityFreedHandler;
 
   Log m_log;
 };

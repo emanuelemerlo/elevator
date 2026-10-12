@@ -61,10 +61,24 @@ bool Floors::SetStop(const std::shared_ptr<Call>& call, const bool destinationOn
   return true;
 }
 
-Floors::FloorNumber Floors::GetNextStop(const FloorNumber currentFloor, Direction& currentDirection)
+bool Floors::SetPickupStop(const std::shared_ptr<Call>& call)
 {
   std::lock_guard<std::mutex> lock(m_mutex);
 
+  if (!call->IsValid())
+    return false;
+
+  auto& stop = m_stops[call->GetStartFloor()];
+  stop.first = true;
+  stop.second = stop.second != Direction::None && stop.second != call->GetDirection()
+    ? Direction::Both
+    : call->GetDirection();
+
+  return true;
+}
+
+Floors::FloorNumber Floors::FindNextStop(const FloorStops& stops, const FloorNumber currentFloor, Direction& currentDirection)
+{
   if (!IsValid(currentFloor))
     return InvalidFloor;
 
@@ -83,7 +97,7 @@ Floors::FloorNumber Floors::GetNextStop(const FloorNumber currentFloor, Directio
     searchStartFloor = currentFloor != BottomFloor ? currentFloor : TopFloor();
   }
 
-  FloorNumber nextStop = Search(searchStartFloor, currentDirection);
+  FloorNumber nextStop = Search(stops, searchStartFloor, currentDirection);
 
   // One more search attempt for every direction, changing the search start floor:
   // top floor for down and bottom floor for up
@@ -95,12 +109,21 @@ Floors::FloorNumber Floors::GetNextStop(const FloorNumber currentFloor, Directio
       currentDirection = (currentDirection == Direction::Up ? Direction::Down : Direction::Up);
       searchStartFloor = (currentDirection == Direction::Up ? BottomFloor : TopFloor());
 
-      nextStop = Search(searchStartFloor, currentDirection);
+      nextStop = Search(stops, searchStartFloor, currentDirection);
     }
   }
 
+  return nextStop;
+}
+
+Floors::FloorNumber Floors::GetNextStop(const FloorNumber currentFloor, Direction& currentDirection)
+{
+  std::lock_guard<std::mutex> lock(m_mutex);
+
+  const auto nextStop = FindNextStop(m_stops, currentFloor, currentDirection);
+
   m_log.Trace(std::string("GetNextStop ") + std::to_string(currentFloor), Log::TraceLevel::Debug);
-  
+
   return nextStop;
 }
 
@@ -136,22 +159,27 @@ People& Floors::GetPeople()
   return people;
 }
 
-Floors::FloorNumber Floors::Search(const FloorNumber startFloor, const Direction direction)
+Floors::FloorNumber Floors::Search(const FloorStops& stops, const FloorNumber startFloor, const Direction direction)
 {
   if (!IsValid(startFloor) || (direction != Direction::Up && direction != Direction::Down))
     return InvalidFloor;
 
   if(direction == Direction::Up)
   {
-  for (FloorNumber floor = startFloor; IsValid(floor); ++floor)
-    if (m_stops[floor].first && (m_stops[floor].second == Direction::Up || m_stops[floor].second == Direction::Both))
-      return floor;
+    for (FloorNumber floor = startFloor; IsValid(floor); ++floor)
+      if (stops[floor].first && (stops[floor].second == Direction::Up || stops[floor].second == Direction::Both))
+        return floor;
   }
   else if (direction == Direction::Down)
   {
-    for (FloorNumber floor = startFloor; IsValid(floor); --floor)
-      if (m_stops[floor].first && (m_stops[floor].second == Direction::Down || m_stops[floor].second == Direction::Both))
+    for (FloorNumber floor = startFloor; ; --floor)
+    {
+      if (stops[floor].first && (stops[floor].second == Direction::Down || stops[floor].second == Direction::Both))
         return floor;
+
+      if (floor == BottomFloor)
+        break;
+    }
   }
 
   return InvalidFloor;

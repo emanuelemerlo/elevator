@@ -8,6 +8,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <iomanip>
+#include <limits>
 
 namespace
 {
@@ -34,12 +35,44 @@ namespace
 
   bool FindUnsigned(const std::string& json, const std::string& key, unsigned int& value)
   {
-    const std::regex pattern("\"" + key + "\"\\s*:\\s*(\\d+)");
+    // A leading '-' is matched on purpose: a negative value must be reported as an
+    // error instead of being silently ignored (and replaced by the default).
+    const std::regex pattern("\"" + key + "\"\\s*:\\s*(-?\\d+)");
     std::smatch match;
     if (!std::regex_search(json, match, pattern))
       return false;
 
-    value = static_cast<unsigned int>(std::stoul(match[1].str()));
+    const auto text = match[1].str();
+    if (text.front() == '-')
+      throw std::invalid_argument("Invalid value for '" + key + "': it must not be negative");
+
+    const auto parsed = std::stoull(text);
+    if (parsed > std::numeric_limits<unsigned int>::max())
+      throw std::invalid_argument("Invalid value for '" + key + "': out of range");
+
+    value = static_cast<unsigned int>(parsed);
+    return true;
+  }
+
+  bool FindDouble(const std::string& json, const std::string& key, double& value)
+  {
+    const std::regex pattern("\"" + key + "\"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)");
+    std::smatch match;
+    if (!std::regex_search(json, match, pattern))
+      return false;
+
+    value = std::stod(match[1].str());
+    return true;
+  }
+
+  bool FindBool(const std::string& json, const std::string& key, bool& value)
+  {
+    const std::regex pattern("\"" + key + "\"\\s*:\\s*(true|false)");
+    std::smatch match;
+    if (!std::regex_search(json, match, pattern))
+      return false;
+
+    value = match[1].str() == "true";
     return true;
   }
 
@@ -100,11 +133,17 @@ namespace
     if (settings.numberOfElevators == 0)
       throw std::invalid_argument("building.numberOfElevators must be greater than 0");
 
+    if (settings.numberOfElevators > 26)
+      throw std::invalid_argument("building.numberOfElevators must be at most 26 (system generates IDs A-Z)");
+
     if (settings.numberOfFloors < 2)
       throw std::invalid_argument("building.numberOfFloors must be at least 2");
 
     if (settings.minDelayBetweenCalls > settings.maxDelayBetweenCalls)
       throw std::invalid_argument("callsGenerator.minDelayBetweenCallsMs must be <= maxDelayBetweenCallsMs");
+
+    if (settings.numberOfCalls == 0)
+      throw std::invalid_argument("callsGenerator.numberOfCalls must be greater than 0");
 
     if (settings.averageCallsPerDay == 0)
       throw std::invalid_argument("callsGenerator.averageCallsPerDay must be greater than 0");
@@ -121,6 +160,9 @@ namespace
     if (settings.timeToReachTheNextFloor.count() == 0)
       throw std::invalid_argument("elevator.timeToReachTheNextFloorMs must be greater than 0");
 
+    if (!(settings.timeScale > 0.0) || settings.timeScale > 1000.0)
+      throw std::invalid_argument("simulation.timeScale must be greater than 0 and at most 1000");
+
     if (settings.maxPeoplePerElevator == 0)
       throw std::invalid_argument("elevator.maxPeople must be greater than 0");
   }
@@ -130,7 +172,7 @@ bool Configuration::LoadFromFile(const std::string& path)
 {
   const auto json = ReadFile(path);
   if (json.empty())
-    return false;
+    throw std::runtime_error("Configuration file '" + path + "' not found or empty");
 
   Settings settings = g_settings;
   unsigned int value = 0;
@@ -144,6 +186,9 @@ bool Configuration::LoadFromFile(const std::string& path)
 
   if (FindString(json, "type", text))
     settings.generatorType = ParseGeneratorType(text);
+
+  if (FindUnsigned(json, "numberOfCalls", value))
+    settings.numberOfCalls = value;
 
   if (FindUnsigned(json, "averageCallsPerDay", value))
     settings.averageCallsPerDay = value;
@@ -169,8 +214,18 @@ bool Configuration::LoadFromFile(const std::string& path)
   if (FindUnsigned(json, "enterAndExitTimeMs", value))
     settings.enterAndExitTime = std::chrono::milliseconds(value);
 
+  if (FindUnsigned(json, "doorTransitionTimeMs", value))
+    settings.doorTransitionTime = std::chrono::milliseconds(value);
+
   if (FindUnsigned(json, "maxPeople", value))
     settings.maxPeoplePerElevator = value;
+
+  FindDouble(json, "timeScale", settings.timeScale);
+
+  if (FindUnsigned(json, "randomSeed", value))
+    settings.randomSeed = value;
+
+  FindBool(json, "autoStop", settings.autoStop);
 
   if (FindString(json, "traceLevel", text))
     settings.traceLevel = ParseTraceLevel(text);
@@ -211,6 +266,11 @@ std::chrono::milliseconds Configuration::Elevator::EnterAndExitTime()
   return Get().enterAndExitTime;
 }
 
+std::chrono::milliseconds Configuration::Elevator::DoorTransitionTime()
+{
+  return Get().doorTransitionTime;
+}
+
 unsigned int Configuration::Elevator::MaxPeople()
 {
   return Get().maxPeoplePerElevator;
@@ -219,6 +279,11 @@ unsigned int Configuration::Elevator::MaxPeople()
 Configuration::CallsGenerator::Type Configuration::CallsGenerator::GeneratorType()
 {
   return Get().generatorType;
+}
+
+unsigned int Configuration::CallsGenerator::NumberOfCalls()
+{
+  return Get().numberOfCalls;
 }
 
 unsigned int Configuration::CallsGenerator::AverageCallsPerDay()
@@ -283,21 +348,54 @@ void Configuration::Simulation::StartClock()
   g_simulationStartTime = std::chrono::steady_clock::now();
 }
 
+double Configuration::Simulation::TimeScale()
+{
+  return Get().timeScale;
+}
+
+unsigned int Configuration::Simulation::RandomSeed()
+{
+  return Get().randomSeed;
+}
+
+bool Configuration::Simulation::AutoStop()
+{
+  return Get().autoStop;
+}
+
+std::chrono::microseconds Configuration::Simulation::ToRealDuration(const std::chrono::milliseconds simulatedDuration)
+{
+  const auto realMicroseconds = static_cast<double>(simulatedDuration.count()) * 1000.0 / TimeScale();
+  return std::chrono::microseconds(static_cast<long long>(realMicroseconds));
+}
+
+std::uint64_t Configuration::Simulation::ToSimulatedMs(const std::chrono::microseconds realDuration)
+{
+  const auto simulatedMs = static_cast<double>(realDuration.count()) / 1000.0 * TimeScale();
+  return simulatedMs <= 0.0 ? 0U : static_cast<std::uint64_t>(simulatedMs);
+}
+
+void Configuration::Simulation::SleepFor(const std::chrono::milliseconds simulatedDuration)
+{
+  std::this_thread::sleep_for(ToRealDuration(simulatedDuration));
+}
+
+long long Configuration::Simulation::ElapsedMs()
+{
+  return static_cast<long long>(ToSimulatedMs(std::chrono::duration_cast<std::chrono::microseconds>(
+    std::chrono::steady_clock::now() - g_simulationStartTime)));
+}
+
 double Configuration::Simulation::CurrentHour()
 {
   const auto dayDurationMs = static_cast<double>(CallsGenerator::SimulationDayDuration());
-  const auto elapsedMs = static_cast<double>(
-    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - g_simulationStartTime).count());
-
-  return std::fmod(elapsedMs, dayDurationMs) / dayDurationMs * 24.0;
+  return std::fmod(static_cast<double>(ElapsedMs()), dayDurationMs) / dayDurationMs * 24.0;
 }
 
 unsigned int Configuration::Simulation::CurrentDay()
 {
   const auto dayDurationMs = CallsGenerator::SimulationDayDuration();
-  const auto elapsedMs =
-    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - g_simulationStartTime).count();
-  const auto elapsedDays = static_cast<unsigned int>(elapsedMs / dayDurationMs);
+  const auto elapsedDays = static_cast<unsigned int>(ElapsedMs() / dayDurationMs);
 
   return std::min(elapsedDays + 1U, CallsGenerator::NumberOfSimulationDays());
 }
@@ -306,10 +404,8 @@ bool Configuration::Simulation::Completed()
 {
   const auto targetDurationMs =
     CallsGenerator::SimulationDayDuration() * static_cast<long long>(CallsGenerator::NumberOfSimulationDays());
-  const auto elapsedMs =
-    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - g_simulationStartTime).count();
 
-  return elapsedMs >= targetDurationMs;
+  return ElapsedMs() >= targetDurationMs;
 }
 
 std::string Configuration::Simulation::CurrentDayTimeLabel()

@@ -85,6 +85,14 @@ public:
     return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - m_queuedTime);
   }
 
+  // Real time elapsed since the call was queued, with microsecond precision: the caller converts it
+  // into simulated time (see Configuration::Simulation::ToSimulatedMs).
+  std::chrono::microseconds GetElapsedSinceQueued() const
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - m_queuedTime);
+  }
+
   bool IsValid() const
   {
     std::lock_guard<std::mutex> lock(m_mutex);

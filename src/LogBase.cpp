@@ -10,7 +10,7 @@
 std::deque<std::shared_ptr<LogBase::TraceMessage>> LogBase::m_messageQueue;
 std::unique_ptr<std::mutex> LogBase::m_messageQueueMutex{ std::make_unique<std::mutex>() };
 
-LogBase::TraceLevel LogBase::m_traceLevelFilter{ Configuration::Log::TraceLevel() };
+std::atomic<LogBase::TraceLevel> LogBase::m_traceLevelFilter{ Configuration::Log::TraceLevel() };
 
 std::atomic_uint LogBase::m_refCount;
 
@@ -72,9 +72,16 @@ std::unique_ptr<LogBase::TraceThread>& LogBase::GetThreadInstance()
 
 void LogBase::TraceThread::CycleFunction(LogBase* logBase)
 {
-  while (!m_messageQueue.empty() && !StopRequested())
+  while (!StopRequested())
   {
+    // The queue is shared with the producers: emptiness must be checked under the
+    // lock. The lock is also held while the message is written so that
+    // FlushPendingMessages() cannot observe an empty queue before the last
+    // message has actually been written.
     std::lock_guard<std::mutex> lockMessageQueue(*m_messageQueueMutex);
+
+    if (m_messageQueue.empty())
+      return;
 
     const auto message = std::move(m_messageQueue.front());
     m_messageQueue.pop_front();

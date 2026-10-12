@@ -12,6 +12,10 @@
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <deque>
+#include <condition_variable>
+#include <atomic>
+#include <thread>
 
 #include "Elevator.h"
 
@@ -30,6 +34,9 @@ public:
 
 public:
   bool AssignCall(const class std::shared_ptr<class Call>& call);
+  // Internal assign used by pending worker. If enqueueIfCapacityLimited is true,
+  // the call will be enqueued into the pending queue when all elevators are full.
+  bool AssignCallInternal(const class std::shared_ptr<class Call>& call, bool enqueueIfCapacityLimited);
 
   void Shutdown();
   void TraceStatistics();
@@ -37,9 +44,22 @@ public:
   std::vector<ElevatorSnapshot> GetElevatorSnapshots() const;
 
 private:
+  void EnqueuePendingCall(const std::shared_ptr<class Call>& call);
+  void RequestPendingRetry();
+
+private:
   std::vector<std::unique_ptr<class Elevator>> m_elevators;
   std::mutex m_assignMutex;
   bool m_shutdownCompleted{ false };
+
+  // Pending calls queue: when all elevators are full the call is enqueued here
+  // and a background worker retries assignments without blocking caller threads.
+  std::deque<std::shared_ptr<class Call>> m_pendingCalls;
+  mutable std::mutex m_pendingMutex;
+  std::condition_variable m_pendingCond;
+  std::unique_ptr<std::thread> m_pendingThread;
+  std::atomic_bool m_pendingThreadRunning{ false };
+  bool m_retryRequested{ false };   // guarded by m_pendingMutex: a retry was requested by an event (capacity freed, call refused)
 
   Log m_log;
 };

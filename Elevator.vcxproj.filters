@@ -60,6 +60,9 @@
     <ClCompile Include="src\SymbolicInterface.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\AssignmentOptimizer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Call.h">
@@ -113,10 +116,14 @@
     <ClInclude Include="src\Statistics.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\AssignmentOptimizer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="config.json">
       <Filter>Configuration Files</Filter>
     </None>
+    <None Include="OPTIMIZATION_NOTES.md" />
   </ItemGroup>
 </Project>
