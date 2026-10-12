@@ -1,6 +1,7 @@
 #include "Statistics.h"
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <mutex>
 
@@ -9,6 +10,7 @@ namespace
   std::mutex g_mutex;
   StatisticsSnapshot g_statistics;
   std::map<std::string, std::uint64_t> g_elevatorAssignments;
+  std::vector<std::uint32_t> g_waitSamplesMs;
 
   void RefreshElevatorAssignments()
   {
@@ -28,6 +30,14 @@ double StatisticsSnapshot::AverageWaitTimeMs() const
   return static_cast<double>(totalWaitTimeMs) / static_cast<double>(boardedPassengers);
 }
 
+double StatisticsSnapshot::AverageJourneyTimeMs() const
+{
+  if (completedPassengers == 0U)
+    return 0.0;
+
+  return static_cast<double>(totalJourneyTimeMs) / static_cast<double>(completedPassengers);
+}
+
 double StatisticsSnapshot::AverageAssignmentTimeMs() const
 {
   if (assignmentDecisions == 0U)
@@ -41,6 +51,7 @@ void Statistics::Reset()
   std::lock_guard<std::mutex> lock(g_mutex);
   g_statistics = StatisticsSnapshot();
   g_elevatorAssignments.clear();
+  g_waitSamplesMs.clear();
 }
 
 void Statistics::RecordQueuedCall()
@@ -107,12 +118,60 @@ void Statistics::RecordBoardedPassenger(const std::chrono::milliseconds waitTime
   const auto waitTimeMs = static_cast<std::uint64_t>(waitTime.count());
   g_statistics.totalWaitTimeMs += waitTimeMs;
   g_statistics.maxWaitTimeMs = std::max(g_statistics.maxWaitTimeMs, waitTimeMs);
+  g_waitSamplesMs.push_back(static_cast<std::uint32_t>(std::min<std::uint64_t>(waitTimeMs, std::numeric_limits<std::uint32_t>::max())));
 }
 
-void Statistics::RecordCompletedPassenger()
+void Statistics::RecordCompletedPassenger(const std::chrono::milliseconds journeyTime)
 {
   std::lock_guard<std::mutex> lock(g_mutex);
   ++g_statistics.completedPassengers;
+
+  const auto journeyTimeMs = static_cast<std::uint64_t>(std::max<long long>(0, journeyTime.count()));
+  g_statistics.totalJourneyTimeMs += journeyTimeMs;
+  g_statistics.maxJourneyTimeMs = std::max(g_statistics.maxJourneyTimeMs, journeyTimeMs);
+}
+
+void Statistics::RecordRequeuedCall()
+{
+  std::lock_guard<std::mutex> lock(g_mutex);
+  ++g_statistics.requeuedCalls;
+}
+
+std::uint64_t Statistics::ActiveCalls()
+{
+  std::lock_guard<std::mutex> lock(g_mutex);
+  return g_statistics.queuedCalls > g_statistics.completedPassengers
+    ? g_statistics.queuedCalls - g_statistics.completedPassengers
+    : 0U;
+}
+
+WaitDistribution Statistics::GetWaitDistribution()
+{
+  std::vector<std::uint32_t> samples;
+
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    samples = g_waitSamplesMs;
+  }
+
+  WaitDistribution distribution;
+  distribution.samples = samples.size();
+
+  if (samples.empty())
+    return distribution;
+
+  std::sort(samples.begin(), samples.end());
+
+  const auto percentile = [&samples](const double ratio)
+  {
+    const auto index = static_cast<std::size_t>(ratio * static_cast<double>(samples.size() - 1U) + 0.5);
+    return static_cast<double>(samples[index]);
+  };
+
+  distribution.p50Ms = percentile(0.50);
+  distribution.p95Ms = percentile(0.95);
+  distribution.p99Ms = percentile(0.99);
+  return distribution;
 }
 
 StatisticsSnapshot Statistics::GetSnapshot()

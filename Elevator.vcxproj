@@ -11,6 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\AssignmentOptimizer.cpp" />
     <ClCompile Include="src\Configuration.cpp" />
     <ClCompile Include="src\ConsoleView.cpp" />
     <ClCompile Include="src\Elevator.cpp" />
@@ -27,6 +28,7 @@
     <ClCompile Include="src\SymbolicInterface.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\AssignmentOptimizer.h" />
     <ClInclude Include="src\Call.h" />
     <ClInclude Include="src\ConsoleView.h" />
     <ClInclude Include="src\Configuration.h" />
@@ -47,25 +49,26 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="config.json" />
+    <None Include="OPTIMIZATION_NOTES.md" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
     <ProjectGuid>{9EBFC63F-AEEB-45F2-990E-565DAB3420B8}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>Elevator</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0.17763.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>

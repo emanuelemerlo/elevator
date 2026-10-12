@@ -6,8 +6,11 @@
 #include "LogBase.h"
 #include "LogFileSink.h"
 #include "Statistics.h"
+#include "AssignmentOptimizer.h"
 
+#include <map>
 #include <random>
+#include <set>
 #include <cstdlib>
 #include <sstream>
 #include <algorithm>
@@ -25,134 +28,85 @@ namespace
   struct AssignmentCandidate
   {
     Elevator* elevator{ nullptr };
+    AssignmentOptimizer::Evaluation evaluation;
+    double wear{ 0.0 };
     double score{ std::numeric_limits<double>::max() };
-    bool available{ false };
-    bool capacityLimited{ false };
     std::size_t committedLoad{ 0U };
   };
 
-  bool IsMoving(const ElevatorStatus status)
-  {
-    return status == ElevatorStatus::Moving || status == ElevatorStatus::PeopleEnterAndExit;
-  }
-
-  bool IsOnTheWay(const Direction direction, const Floors::FloorNumber currentFloor, const Floors::FloorNumber callFloor)
-  {
-    if (direction == Direction::Up)
-      return callFloor >= currentFloor;
-
-    if (direction == Direction::Down)
-      return callFloor <= currentFloor;
-
-    return true;
-  }
-
-  Floors::FloorNumber EstimateRouteFloors(
-    const Elevator& elevator,
-    const std::shared_ptr<Call>& call,
-    const bool directionCompatible,
-    const bool callStillAhead)
-  {
-    const auto currentFloor = elevator.GetCurrentFloor();
-    const auto callFloor = call->GetStartFloor();
-    const auto currentDirection = elevator.GetDirection();
-
-    if (!IsMoving(elevator.GetStatus()) || currentDirection == Direction::None)
-      return static_cast<Floors::FloorNumber>(std::abs(static_cast<int>(currentFloor) - static_cast<int>(callFloor)));
-
-    if (directionCompatible && callStillAhead)
-      return static_cast<Floors::FloorNumber>(std::abs(static_cast<int>(currentFloor) - static_cast<int>(callFloor)));
-
-    // If the car is moving away from the caller, estimate the cost of finishing
-    // the current sweep before coming back. This keeps opposite-direction pickups
-    // possible, but makes them less attractive than on-the-way pickups.
-    if (currentDirection == Direction::Up)
-      return (Floors::TopFloor() - currentFloor) + (Floors::TopFloor() - callFloor);
-
-    if (currentDirection == Direction::Down)
-      return (currentFloor - Floors::BottomFloor) + (callFloor - Floors::BottomFloor);
-
-    return static_cast<Floors::FloorNumber>(std::abs(static_cast<int>(currentFloor) - static_cast<int>(callFloor)));
-  }
-
-  std::size_t EstimateIntermediateStops(
-    const Elevator& elevator,
-    const std::shared_ptr<Call>& call,
-    const bool directionCompatible,
-    const bool callStillAhead)
-  {
-    if (directionCompatible && callStillAhead)
-      return elevator.GetQueuedStopsBetween(elevator.GetCurrentFloor(), call->GetStartFloor());
-
-    return elevator.GetQueuedStopsCount();
-  }
-
   double WearScore(const Elevator& elevator)
   {
-    // Wear is deliberately a small additive score: waiting time should dominate,
-    // but long-term ties should drift toward less-used cars.
+    // Wear is only a tie-breaker: it is normalized among the candidates and capped (see AssignCallInternal),
+    // so that waiting time always dominates but long-term ties drift toward less-used cars.
     return
       static_cast<double>(elevator.GetTotalFloorsTravelled()) * 0.75 +
       static_cast<double>(elevator.GetRunCounter()) * 8.0 +
       static_cast<double>(elevator.GetDoorCycles()) * 12.0;
   }
 
-  AssignmentCandidate EvaluateElevator(Elevator& elevator, const std::shared_ptr<Call>& call)
+  AssignmentOptimizer::Timing CurrentTiming()
   {
-    AssignmentCandidate candidate;
-    candidate.elevator = &elevator;
+    AssignmentOptimizer::Timing timing;
+    timing.floorMs = static_cast<double>(Configuration::Elevator::TimeToReachTheNextFloor().count());
+    timing.doorMs = static_cast<double>(Configuration::Elevator::DoorTransitionTime().count());
+    timing.dwellMs = static_cast<double>(Configuration::Elevator::EnterAndExitTime().count());
+    return timing;
+  }
 
-    if (!call->IsValid() || elevator.GetStatus() == ElevatorStatus::OutOfOrder)
-      return candidate;
+  AssignmentOptimizer::Weights CurrentWeights(const AssignmentOptimizer::Timing& timing)
+  {
+    AssignmentOptimizer::Weights weights;
 
-    const auto maxPeople = Configuration::Elevator::MaxPeople();
-    const auto committedLoad = elevator.GetCommittedPeopleCount();
-    candidate.committedLoad = committedLoad;
-    candidate.capacityLimited = committedLoad >= maxPeople;
-    Statistics::RecordCommittedElevatorLoad(committedLoad);
+    // A passenger is considered "old" after waiting about four times the time of a full trip of the building.
+    const auto fullTripMs = static_cast<double>(Floors::TotalFloors()) * timing.floorMs + 2.0 * timing.doorMs + timing.dwellMs;
+    weights.agingMs = std::max(1.0, 4.0 * fullTripMs);
+    return weights;
+  }
 
-    const auto loadRatio = static_cast<double>(committedLoad) / static_cast<double>(maxPeople);
+  // Passengers already committed to every cabin: the ones inside plus the ones assigned and still waiting.
+  std::vector<std::vector<AssignmentOptimizer::Passenger>> CollectCommittedPassengers(
+    const std::vector<std::unique_ptr<Elevator>>& elevators,
+    std::vector<ElevatorDispatchState>& states)
+  {
+    // The waiting list is read before the cabins: a passenger boarding in between is then seen twice
+    // (and deduplicated below) instead of being missed.
+    const auto waiting = Floors::GetPeople().Snapshot();
 
-    if (candidate.capacityLimited)
-      return candidate;
+    std::map<std::string, std::vector<std::shared_ptr<Call>>> waitingByElevator;
+    for (const auto& person : waiting)
+      waitingByElevator[person->GetAssignedElevator()].push_back(person);
 
-    const auto currentDirection = elevator.GetDirection();
-    const auto callDirection = call->GetDirection();
-    const auto currentFloor = elevator.GetCurrentFloor();
-    const auto callFloor = call->GetStartFloor();
+    std::vector<std::vector<AssignmentOptimizer::Passenger>> committed(elevators.size());
+    states.clear();
+    states.reserve(elevators.size());
 
-    const auto idle = elevator.GetStatus() == ElevatorStatus::Idle || currentDirection == Direction::None;
-    const auto directionCompatible = idle || currentDirection == callDirection;
-    const auto callStillAhead = IsOnTheWay(currentDirection, currentFloor, callFloor);
-    const auto onTheWay = directionCompatible && callStillAhead;
+    for (std::size_t index = 0U; index < elevators.size(); ++index)
+    {
+      states.push_back(elevators[index]->GetDispatchState());
+      const auto& state = states.back();
 
-    const auto routeFloors = EstimateRouteFloors(elevator, call, directionCompatible, callStillAhead);
-    const auto intermediateStops = EstimateIntermediateStops(elevator, call, directionCompatible, callStillAhead);
+      std::set<const Call*> onboard;
+      for (const auto& person : state.onboard)
+      {
+        onboard.insert(person.get());
+        committed[index].push_back({ person->GetStartFloor(), person->GetDestinationFloor(), true, 0.0 });
+      }
 
-    const auto floorMs = static_cast<double>(Configuration::Elevator::TimeToReachTheNextFloor().count());
-    const auto stopMs = static_cast<double>(Configuration::Elevator::EnterAndExitTime().count());
+      const auto assigned = waitingByElevator.find(elevators[index]->GetId());
+      if (assigned == waitingByElevator.end())
+        continue;
 
-    // Score is expressed in time-like units. Travel and scheduled stops form the
-    // base ETA, then penalties account for state, capacity and mechanical wear.
-    double score = routeFloors * floorMs;
-    score += intermediateStops * stopMs;
+      for (const auto& person : assigned->second)
+      {
+        if (onboard.count(person.get()) != 0U)
+          continue;
 
-    if (elevator.GetStatus() == ElevatorStatus::PeopleEnterAndExit)
-      score += stopMs;
+        const auto waitedMs = static_cast<double>(Configuration::Simulation::ToSimulatedMs(person->GetElapsedSinceQueued()));
+        committed[index].push_back({ person->GetStartFloor(), person->GetDestinationFloor(), false, waitedMs });
+      }
+    }
 
-    if (!idle && !onTheWay)
-      score += directionCompatible ? floorMs * 2.0 : floorMs * 4.0;
-
-    if (loadRatio >= 0.80)
-      score += stopMs * 6.0 * loadRatio;
-    else
-      score += stopMs * loadRatio;
-
-    score += WearScore(elevator);
-
-    candidate.score = score;
-    candidate.available = elevator.Available(call);
-    return candidate;
+    return committed;
   }
 
   std::string Separator(const std::size_t width)
@@ -361,17 +315,16 @@ namespace
       ++pressureScore;
     if (statistics.maxWaitTimeMs > static_cast<std::uint64_t>(recommendation.targetAverageWaitMs * 3.0))
       ++pressureScore;
-    if (recommendation.forcedAssignmentRatio > 0.05)
-      ++pressureScore;
-    if (recommendation.forcedAssignmentRatio > 0.15)
-      ++pressureScore;
+    // Reversing the sweep to serve a call is normal in a busy building, so the forced ratio is only reported:
+    // the saturation signal is the share of decisions where every car had to reverse.
     if (recommendation.noAvailableRatio > 0.05)
+      ++pressureScore;
+    if (recommendation.noAvailableRatio > 0.20)
       ++pressureScore;
 
     const auto canConsiderReduction =
       currentElevators > 1U &&
       pendingBoarding == 0U &&
-      statistics.forcedAssignments == 0U &&
       statistics.noAvailableElevatorDecisions == 0U &&
       statistics.AverageWaitTimeMs() < recommendation.targetAverageWaitMs * 0.5 &&
       recommendation.unassignedElevators > 0U;
@@ -419,9 +372,79 @@ Management::Management(const unsigned int numberOfElevators)
   {
     const auto elevatorId = std::string(1U, static_cast<char>('A' + elevatorIndex));
     m_elevators.push_back(std::make_unique<Elevator>(elevatorId));
+
+    // A passenger refused by a full cabin must be dispatched again; freed capacity wakes up the pending calls.
+    m_elevators.back()->SetRefusedCallHandler([this](const std::shared_ptr<Call>& call) { EnqueuePendingCall(call); });
+    m_elevators.back()->SetCapacityFreedHandler([this]() { RequestPendingRetry(); });
   }
 
   m_log.SetTraceId("Management");
+
+  // Start pending calls worker
+  m_pendingThreadRunning = true;
+  m_pendingThread = std::make_unique<std::thread>([this]() {
+    // Retry period when no event wakes the worker up earlier (simulated time, never shorter than 2 ms of real time).
+    const auto fallbackRetry = std::max(
+      Configuration::Simulation::ToRealDuration(std::chrono::milliseconds(100)),
+      std::chrono::microseconds(2000));
+
+    std::unique_lock<std::mutex> lock(m_pendingMutex);
+
+    while (m_pendingThreadRunning)
+    {
+      m_pendingCond.wait_for(lock, fallbackRetry, [this]() { return m_retryRequested || !m_pendingThreadRunning; });
+      m_retryRequested = false;
+
+      if (m_pendingCalls.empty() || !m_pendingThreadRunning)
+        continue;
+
+      // Work on a copy, oldest call first, without holding the pending mutex (producers must not be blocked).
+      // Every call is tried: a call that does not fit must not hold back the ones that do.
+      const std::vector<std::shared_ptr<Call>> attempt(m_pendingCalls.begin(), m_pendingCalls.end());
+      lock.unlock();
+
+      std::vector<std::shared_ptr<Call>> assigned;
+      for (const auto& call : attempt)
+      {
+        if (!m_pendingThreadRunning)
+          break;
+
+        // The call is already in the queue: it must not be enqueued again if the cabins are still full.
+        if (AssignCallInternal(call, false))
+          assigned.push_back(call);
+      }
+
+      lock.lock();
+
+      for (const auto& call : assigned)
+        m_pendingCalls.erase(std::remove(m_pendingCalls.begin(), m_pendingCalls.end(), call), m_pendingCalls.end());
+    }
+  });
+}
+
+void Management::EnqueuePendingCall(const std::shared_ptr<Call>& call)
+{
+  {
+    std::lock_guard<std::mutex> lock(m_pendingMutex);
+    m_pendingCalls.push_back(call);
+    m_retryRequested = true;
+  }
+
+  m_pendingCond.notify_one();
+}
+
+void Management::RequestPendingRetry()
+{
+  {
+    std::lock_guard<std::mutex> lock(m_pendingMutex);
+
+    if (m_pendingCalls.empty())
+      return;
+
+    m_retryRequested = true;
+  }
+
+  m_pendingCond.notify_one();
 }
 
 Management::~Management()
@@ -436,6 +459,20 @@ void Management::Shutdown()
 
   m_log.Trace("Shutdown in progress...", Log::TraceLevel::Verbose);
 
+  // Stop the pending calls worker first: it must not assign calls to elevators that are shutting down.
+  {
+    std::lock_guard<std::mutex> lock(m_pendingMutex);
+    m_pendingThreadRunning = false;
+  }
+  m_pendingCond.notify_all();
+  if (m_pendingThread && m_pendingThread->joinable())
+    m_pendingThread->join();
+  m_pendingThread.reset();
+
+  // Ask every elevator to stop first, then wait for them: they finish their current step in parallel.
+  for (auto& elevator : m_elevators)
+    elevator->RequestShutdown();
+
   for (auto& elevator : m_elevators)
     elevator->ShutDown();
 
@@ -445,81 +482,121 @@ void Management::Shutdown()
 
 bool Management::AssignCall(const std::shared_ptr<Call>& call)
 {
+  return AssignCallInternal(call, true);
+}
+
+bool Management::AssignCallInternal(const std::shared_ptr<Call>& call, bool enqueueIfCapacityLimited)
+{
   const auto assignmentStartTime = std::chrono::steady_clock::now();
 
   // Assignment is serialized because calls are generated asynchronously and each
   // decision reads mutable elevator queues and writes the assigned elevator id.
   std::lock_guard<std::mutex> lock(m_assignMutex);
 
-  bool callAssigned = false;
-  bool forcedAssignment = false;
-  bool availableElevatorFound = false;
+  if (!call->IsValid())
+    return false;
 
-  const auto assignCall = [&call, this](const auto& elevator)
-  {
-    std::stringstream message;
-    message << "Call " << call->ToString() << " assigned to elevator: " << elevator->GetId();
-    m_log.Trace(message);
+  const auto timing = CurrentTiming();
+  const auto weights = CurrentWeights(timing);
+  const auto capacity = static_cast<std::size_t>(Configuration::Elevator::MaxPeople());
+  const AssignmentOptimizer::Passenger newPassenger{ call->GetStartFloor(), call->GetDestinationFloor(), false, 0.0 };
 
-    call->SetAssignedElevator(elevator->GetId());
-    Statistics::RecordCommittedElevatorLoad(elevator->GetCommittedPeopleCount());
-    const auto answered = elevator->AnswerToCall(call);
-
-    if (answered)
-      Statistics::RecordAssignedCall(elevator->GetId());
-
-    return answered;
-  };
+  std::vector<ElevatorDispatchState> states;
+  const auto committed = CollectCommittedPassengers(m_elevators, states);
 
   std::vector<AssignmentCandidate> candidates;
   candidates.reserve(m_elevators.size());
 
-  do
+  for (std::size_t index = 0U; index < m_elevators.size(); ++index)
   {
-    candidates.clear();
+    AssignmentCandidate candidate;
+    candidate.elevator = m_elevators[index].get();
+    candidate.committedLoad = committed[index].size();
 
-    for (auto& elevator : m_elevators)
-      candidates.push_back(EvaluateElevator(*elevator, call));
-
-    std::sort(candidates.begin(), candidates.end(),
-      [](const AssignmentCandidate& a, const AssignmentCandidate& b) { return a.score < b.score; });
-
-    const auto allCandidatesCapacityLimited = std::all_of(candidates.begin(), candidates.end(),
-      [](const AssignmentCandidate& candidate) { return candidate.capacityLimited; });
-
-    if (!allCandidatesCapacityLimited)
-      break;
-
-    Statistics::RecordCapacityLimitedDecision();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  } while (true);
-
-  // Availability is stricter than scoring. The metric helps detect moments where
-  // the dispatcher had to fall back because every ideal candidate was busy/full.
-  availableElevatorFound = std::any_of(candidates.begin(), candidates.end(),
-    [](const AssignmentCandidate& candidate) { return candidate.available; });
-
-  for(auto& candidate : candidates)
-  {
-    if (m_elevators.size() == 1 || candidate.available)
+    if (states[index].status != ElevatorStatus::OutOfOrder)
     {
-      forcedAssignment = !candidate.available;
-      callAssigned = assignCall(candidate.elevator);
-      break;
+      const AssignmentOptimizer::CabinState cabin{ states[index].floor, states[index].direction, states[index].doorsOpen, states[index].targetFloor };
+      candidate.evaluation = AssignmentOptimizer::EvaluateAssignment(cabin, committed[index], newPassenger, capacity, timing, weights);
+      candidate.wear = WearScore(*candidate.elevator);
     }
+
+    candidates.push_back(candidate);
   }
 
-  if (!callAssigned)
+  // Wear leveling: among the cabins able to serve the call, the less worn ones get a tiny bonus,
+  // never worth more than the time needed to travel one floor.
+  double minWear = std::numeric_limits<double>::max();
+  double maxWear = std::numeric_limits<double>::lowest();
+  for (const auto& candidate : candidates)
   {
-    m_log.Trace("FORCED ASSIGNATION FOR CALL " + call->ToString(), Log::TraceLevel::Warning);
-    forcedAssignment = true;
-    callAssigned = assignCall(candidates.front().elevator);
+    if (!candidate.evaluation.feasible)
+      continue;
+
+    minWear = std::min(minWear, candidate.wear);
+    maxWear = std::max(maxWear, candidate.wear);
   }
 
+  AssignmentCandidate* best = nullptr;
+  bool onTheWayFound = false;
+
+  for (auto& candidate : candidates)
+  {
+    if (!candidate.evaluation.feasible)
+      continue;
+
+    const auto wearRatio = maxWear > minWear ? (candidate.wear - minWear) / (maxWear - minWear) : 0.0;
+    candidate.score = candidate.evaluation.marginalCostMs + wearRatio * timing.floorMs;
+
+    onTheWayFound = onTheWayFound || candidate.evaluation.onTheWay;
+
+    if (best == nullptr || candidate.score < best->score)
+      best = &candidate;
+  }
+
+  if (best == nullptr)
+  {
+    // Every cabin would exceed its capacity: the call waits in the pending queue.
+    if (enqueueIfCapacityLimited)
+    {
+      // The event is counted once per call: retries made by the pending worker are not new events.
+      Statistics::RecordCapacityLimitedDecision();
+      EnqueuePendingCall(call);
+    }
+
+    return false;
+  }
+
+  std::stringstream message;
+  message << "Call " << call->ToString() << " assigned to elevator: " << best->elevator->GetId()
+          << " (pickup in " << std::fixed << std::setprecision(1) << best->evaluation.pickupEtaMs / 1000.0 << " s"
+          << (best->evaluation.onTheWay ? ", on the way" : ", after reversing") << ")";
+  m_log.Trace(message);
+
+  if (Configuration::Log::TraceLevel() == ILog::TraceLevel::Debug)
+  {
+    // Everything the prediction was based on, to compare it with what the cabin really does.
+    const auto index = static_cast<std::size_t>(best - candidates.data());
+    std::stringstream details;
+    details << "Dispatch state of " << best->elevator->GetId() << ": floor " << states[index].floor
+            << " dir " << static_cast<int>(states[index].direction) << " doors " << (states[index].doorsOpen ? "open" : "closed")
+            << " committed:";
+    for (const auto& passenger : committed[index])
+      details << " [" << passenger.from << ">" << passenger.to << (passenger.onboard ? " in" : " wait") << "]";
+    m_log.Trace(details, Log::TraceLevel::Debug);
+  }
+
+  call->SetAssignedElevator(best->elevator->GetId());
+  Statistics::RecordCommittedElevatorLoad(best->committedLoad + 1U);
+  const auto callAssigned = best->elevator->AnswerToCall(call);
+
+  if (callAssigned)
+    Statistics::RecordAssignedCall(best->elevator->GetId());
+
+  // "Forced": no cabin could pick the call up without reversing its sweep first.
   Statistics::RecordAssignmentDecision(
     std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - assignmentStartTime),
-    forcedAssignment,
-    availableElevatorFound);
+    !best->evaluation.onTheWay,
+    onTheWayFound);
 
   return callAssigned;
 }
@@ -527,6 +604,7 @@ bool Management::AssignCall(const std::shared_ptr<Call>& call)
 void Management::TraceStatistics()
 {
   const auto statistics = Statistics::GetSnapshot();
+  const auto waitDistribution = Statistics::GetWaitDistribution();
   std::vector<std::string> report;
 
   // Build the final report as a complete buffer and render it outside the rolling
@@ -548,6 +626,11 @@ void Management::TraceStatistics()
   addGlobalStat("Simulation time", Configuration::Simulation::CurrentDayTimeLabel());
   addGlobalStat("Average wait", FormatSeconds(statistics.AverageWaitTimeMs()));
   addGlobalStat("Max wait", FormatSeconds(static_cast<double>(statistics.maxWaitTimeMs)));
+  addGlobalStat("Wait p50", FormatSeconds(waitDistribution.p50Ms));
+  addGlobalStat("Wait p95", FormatSeconds(waitDistribution.p95Ms));
+  addGlobalStat("Wait p99", FormatSeconds(waitDistribution.p99Ms));
+  addGlobalStat("Average journey", FormatSeconds(statistics.AverageJourneyTimeMs()));
+  addGlobalStat("Max journey", FormatSeconds(static_cast<double>(statistics.maxJourneyTimeMs)));
 
   AddSeparator(report, { 22U, 17U });
   report.push_back("");
@@ -577,17 +660,38 @@ void Management::TraceStatistics()
 
   // These indicators are intentionally heuristic. They are meant to point the
   // operator toward suspicious behavior, not to prove that the dispatch is wrong.
+  // Calls still waiting on the floors when the report is printed: the oldest one tells whether somebody is starving.
+  std::uint64_t oldestWaitingMs = 0U;
+  for (const auto& person : Floors::GetPeople().Snapshot())
+    oldestWaitingMs = std::max(oldestWaitingMs, Configuration::Simulation::ToSimulatedMs(person->GetElapsedSinceQueued()));
+
+  const auto decisions = static_cast<double>(std::max<std::uint64_t>(1U, statistics.assignmentDecisions));
+  const auto noAvailableRatio = static_cast<double>(statistics.noAvailableElevatorDecisions) / decisions;
+
+  // Reversing the sweep to serve a call is normal in a busy building: it is context (INFO), not an anomaly.
   addIndicator(
     "Forced assignments",
     std::to_string(statistics.forcedAssignments),
-    statistics.forcedAssignments == 0U ? "OK" : "WARN",
-    "no ideal car");
+    statistics.forcedAssignments == 0U ? "OK" : "INFO",
+    "needed a reversal");
 
   addIndicator(
     "No available elevator",
     std::to_string(statistics.noAvailableElevatorDecisions),
-    statistics.noAvailableElevatorDecisions == 0U ? "OK" : "WARN",
-    "fallback used");
+    noAvailableRatio <= 0.10 ? (statistics.noAvailableElevatorDecisions == 0U ? "OK" : "INFO") : "WARN",
+    "all cars reversed");
+
+  addIndicator(
+    "Requeued calls",
+    std::to_string(statistics.requeuedCalls),
+    statistics.requeuedCalls == 0U ? "OK" : "WARN",
+    "boarding refused");
+
+  addIndicator(
+    "Oldest waiting call",
+    FormatSeconds(static_cast<double>(oldestWaitingMs)),
+    pendingBoarding == 0U ? "OK" : "WARN",
+    "still on a floor");
 
   addIndicator(
     "Capacity limit waits",
@@ -646,7 +750,7 @@ void Management::TraceStatistics()
   addSizingParameter("Sizing reason", fleetSizing.reason, "heuristic");
   addSizingParameter("Target avg wait", FormatSeconds(fleetSizing.targetAverageWaitMs), "service target");
   addSizingParameter("Observed avg wait", FormatSeconds(statistics.AverageWaitTimeMs()), "simulation");
-  addSizingParameter("Forced assignment rate", FormatPercent(fleetSizing.forcedAssignmentRatio), "pressure");
+  addSizingParameter("Forced assignment rate", FormatPercent(fleetSizing.forcedAssignmentRatio), "info only");
   addSizingParameter("No-available rate", FormatPercent(fleetSizing.noAvailableRatio), "saturation");
   addSizingParameter("Unassigned elevators", std::to_string(fleetSizing.unassignedElevators), "possible spare");
 

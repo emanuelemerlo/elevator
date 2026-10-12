@@ -10,11 +10,12 @@ void People::EnterAndExit(
   People& waitingPeople, 
   const Floors::FloorNumber currentFloor, 
   const Direction currentDirection, 
-  const std::string& elevatorId)
+  const std::string& elevatorId,
+  std::vector<std::shared_ptr<Call>>* refusedPassengers)
 {
   waitingPeople.Trace(currentFloor);
   Exit(currentFloor);
-  Enter(waitingPeople, currentFloor, currentDirection, elevatorId);
+  Enter(waitingPeople, currentFloor, currentDirection, elevatorId, refusedPassengers);
 }
 
 void People::Insert(const std::shared_ptr<Call>& call)
@@ -112,14 +113,18 @@ void People::Enter(
   People& waitingPeople, 
   const Floors::FloorNumber currentFloor, 
   const Direction currentDirection, 
-  const std::string& elevatorId)
+  const std::string& elevatorId,
+  std::vector<std::shared_ptr<Call>>* refusedPassengers)
 {
   std::stringstream message;
   message << "People enter from floor " << std::to_string(currentFloor) << ": ";
 
   // Move matching calls atomically from the global waiting list into this cabin.
   // This prevents another elevator from boarding the same passenger concurrently.
-  std::scoped_lock lock(m_mutex, waitingPeople.m_mutex);
+  // Use std::lock + std::unique_lock to support toolsets without std::scoped_lock.
+  std::unique_lock<std::mutex> lock1(m_mutex, std::defer_lock);
+  std::unique_lock<std::mutex> lock2(waitingPeople.m_mutex, std::defer_lock);
+  std::lock(lock1, lock2);
   auto person = waitingPeople.begin();
 
   while (person != waitingPeople.end())
@@ -128,14 +133,19 @@ void People::Enter(
     {
       if (size() >= Configuration::Elevator::MaxPeople())
       {
+        // The cabin is full: the passenger stays at the floor and must be dispatched again,
+        // otherwise nobody would come back for him (his pickup stop has just been cleared).
         message << "FULL ";
+        if (refusedPassengers != nullptr)
+          refusedPassengers->push_back(*person);
         ++person;
         continue;
       }
 
       message << (*person)->ToString();
 
-      Statistics::RecordBoardedPassenger((*person)->GetWaitingTime());
+      Statistics::RecordBoardedPassenger(std::chrono::milliseconds(
+        Configuration::Simulation::ToSimulatedMs((*person)->GetElapsedSinceQueued())));
       push_front(*person);
       Statistics::RecordCabinPeopleCount(size());
 
@@ -162,7 +172,8 @@ void People::Exit(const Floors::FloorNumber currentFloor)
     if ((*person)->GetDestinationFloor() == currentFloor)
     {
       message << (*person)->ToString();
-      Statistics::RecordCompletedPassenger();
+      Statistics::RecordCompletedPassenger(std::chrono::milliseconds(
+        Configuration::Simulation::ToSimulatedMs((*person)->GetElapsedSinceQueued())));
       person = erase(person);
       continue;
     }

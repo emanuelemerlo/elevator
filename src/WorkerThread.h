@@ -11,8 +11,10 @@
 #include <thread>
 #include <memory>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
-#include <cassert>
+#include <mutex>
+#include <stdexcept>
 
 /**
  * \brief Implements a thread which call a user defined function inside a cycle. 
@@ -54,11 +56,20 @@ public:
    */
   void Stop()
   {
-    if (m_stopRequested)
-      return; // already requested
+    {
+      // Flags are published under the mutex used by the condition variables,
+      // otherwise the notification could be lost between predicate check and wait.
+      std::lock_guard<std::mutex> lock(m_mutex);
 
-    m_stopRequested = true;
-    Go();
+      if (m_stopRequested)
+        return; // already requested
+
+      m_stopRequested = true;
+      m_stopWait = true;
+    }
+
+    m_go.notify_all();
+    m_sleepCondition.notify_all(); // interrupts SleepFor()
 
     if (m_thread != nullptr && m_thread->joinable())
       m_thread->join();
@@ -71,9 +82,16 @@ public:
    */
   void Go()
   {
-    assert(IsActive() && "** THREAD NOT STARTED **"); // Thread started?
+    if (!IsActive())
+      throw std::runtime_error("WorkerThread::Go() called on inactive thread");
 
-    m_stopWait = true;
+    {
+      // The flag must be changed under the mutex: a notification sent while the
+      // worker is between the predicate check and the actual wait would be lost.
+      std::lock_guard<std::mutex> lock(m_mutex);
+      m_stopWait = true;
+    }
+
     m_go.notify_one();
   }
 
@@ -96,6 +114,18 @@ public:
   void SetOwner(T* owner) { m_owner = owner; }
 
 protected:
+  /**
+   * \brief Sleep that is interrupted as soon as a stop is requested.
+   * \param duration Maximum time to sleep.
+   * \return 'true' if the whole duration elapsed, 'false' if the sleep was interrupted by a stop request.
+   */
+  bool SleepFor(const std::chrono::microseconds duration)
+  {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_sleepCondition.wait_for(lock, duration, [this]() { return m_stopRequested.load(); });
+    return !m_stopRequested;
+  }
+
   /**
    * \brief User-defined function called inside the thread loop.
    * \param owner Owner of the thread. Can be nullptr. 
@@ -130,6 +160,7 @@ private:
 
   std::mutex m_mutex;
   std::condition_variable m_go;
+  std::condition_variable m_sleepCondition;
   std::atomic_bool m_stopWait{ false };
 
   T* m_owner{ nullptr };

@@ -13,6 +13,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <future>
+#include <string>
 #include <utility>
 
 /**
@@ -67,6 +68,8 @@ public:
     if (m_started)
       Stop(); // already running: stop and restart
 
+    m_stopped = false; // Stop() leaves the flag set: without this a restarted watchdog would expire immediately
+
     m_guardFunctionResult = std::async(
       std::launch::async,
       bind(&Watchdog::GuardFunction, this, timeout, timeoutCallback));
@@ -83,8 +86,14 @@ public:
     if (!m_started)
       return; // not started
 
-    m_stopped = true;
-    m_condition.notify_one();
+    {
+      // Set the flag under the mutex used by the waiting thread, otherwise the
+      // notification can be lost and the callback fires even if Stop() was called.
+      std::lock_guard<std::mutex> lock(m_mutex);
+      m_stopped = true;
+    }
+
+    m_condition.notify_all();
 
     m_guardFunctionResult.wait();
 
@@ -98,11 +107,13 @@ private:
     const std::chrono::milliseconds timeout,
     const std::function<void(const std::string&)>& timeoutCallback)
   {
-    std::mutex mutex;
-    std::unique_lock<std::mutex> lock(mutex);
+    std::unique_lock<std::mutex> lock(m_mutex);
 
     if (!m_condition.wait_for(lock, timeout, [this]()-> bool { return this->m_stopped; }))
+    {
+      lock.unlock(); // do not hold the mutex while running user code (Stop() would block on it)
       timeoutCallback(m_id);
+    }
 
     return m_stopped;
   }
@@ -110,6 +121,7 @@ private:
 private:
   std::string m_id;
 
+  std::mutex m_mutex;
   std::condition_variable m_condition;
 
   std::atomic_bool m_started{ false };

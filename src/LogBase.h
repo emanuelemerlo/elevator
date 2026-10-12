@@ -91,6 +91,7 @@ private:
 protected:
   std::string m_traceId;
 
-  static TraceLevel m_traceLevelFilter;
+  // Written by every Log constructed at runtime, read by the trace thread: must be atomic.
+  static std::atomic<TraceLevel> m_traceLevelFilter;
 };
 
